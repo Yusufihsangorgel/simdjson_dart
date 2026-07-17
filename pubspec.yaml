@@ -4,6 +4,7 @@ description: >-
   document access for large payloads plus jsonDecode-compatible decoding.
 version: 0.1.1
 repository: https://github.com/Yusufihsangorgel/simdjson_dart
+issue_tracker: https://github.com/Yusufihsangorgel/simdjson_dart/issues
 
 topics:
   - json

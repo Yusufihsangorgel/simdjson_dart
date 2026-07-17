@@ -1,4 +1,4 @@
-![simdjson: fast JSON for Dart](doc/banner.png)
+![simdjson: fast JSON for Dart](https://raw.githubusercontent.com/Yusufihsangorgel/simdjson_dart/main/doc/banner.png)
 
 # simdjson_dart
 
@@ -9,7 +9,7 @@ time through Dart build hooks; there is nothing to install.
 Two APIs:
 
 - **`SimdJsonDocument`** parses once and materializes only what you
-  read. For picking fields out of large payloads this is 5-15x faster
+  read. For picking fields out of large payloads this is 5-14x faster
   than decoding everything.
 - **`simdJsonDecodeBytes`** is a `jsonDecode` alternative that decodes
   the whole document, moderately faster on large byte inputs.
@@ -37,7 +37,7 @@ Medians on an Apple Silicon MacBook (macOS arm64, Dart 3.11), synthetic
 workloads from `bench/bench.dart`. Baseline is `dart:convert` doing the
 same work, including reading the results (its maps materialize lazily).
 
-![benchmark](doc/bench.png)
+![benchmark](https://raw.githubusercontent.com/Yusufihsangorgel/simdjson_dart/main/doc/bench.png)
 
 | Workload (6.7-9.2 MB) | Read 3 values | Full decode + read all |
 |---|---|---|
