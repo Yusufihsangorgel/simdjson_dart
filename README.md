@@ -1,0 +1,89 @@
+# simdjson
+
+Fast JSON for Dart, powered by the [simdjson](https://simdjson.org) C++
+library over FFI. The native code is compiled automatically at build
+time through Dart build hooks; there is nothing to install.
+
+Two APIs:
+
+- **`SimdJsonDocument`** parses once and materializes only what you
+  read. For picking fields out of large payloads this is 5-15x faster
+  than decoding everything.
+- **`simdJsonDecodeBytes`** is a `jsonDecode` alternative that decodes
+  the whole document, moderately faster on large byte inputs.
+
+```dart
+import 'package:simdjson/simdjson.dart';
+
+// Selective access: parse 9 MB, materialize three values.
+final doc = SimdJsonDocument.parseBytes(bytes);
+try {
+  final name = doc.at('/items/0/name') as String?;
+  final price = doc.at('/items/20000/price') as double?;
+  final tags = doc.at('/items/5/tags') as List?;
+} finally {
+  doc.close();
+}
+
+// Full decode, same shapes as jsonDecode.
+final data = simdJsonDecodeBytes(bytes) as Map<String, dynamic>;
+```
+
+## Performance, honestly
+
+Medians on an Apple Silicon MacBook (macOS arm64, Dart 3.11), synthetic
+workloads from `bench/bench.dart`. Baseline is `dart:convert` doing the
+same work, including reading the results (its maps materialize lazily).
+
+| Workload (~9 MB) | Read 3 values | Full decode + read all |
+|---|---|---|
+| API-like objects | **10.3x** | 1.19x |
+| Number-heavy arrays | **5.4x** | 1.75x |
+| String-heavy | **14.8x** | 1.21x |
+
+What this means in practice:
+
+- The big win is `SimdJsonDocument`: when you do not need every field,
+  parse throughput reaches multiple GB/s because the skipped parts are
+  never turned into Dart objects.
+- Full decoding from bytes is 1.2-1.8x, best on number-heavy data
+  (`dart:convert`'s number parsing is the slower path, see
+  [dart-lang/sdk#55522]).
+- If your input is already a Dart `String` and you decode all of it,
+  `jsonDecode` is often *faster* than `simdJsonDecode`; the VM decodes
+  UTF-16 strings natively while simdjson needs UTF-8 bytes. Keep using
+  `dart:convert` there. Run `dart run bench/bench.dart` on your own
+  data before switching.
+
+[dart-lang/sdk#55522]: https://github.com/dart-lang/sdk/issues/55522
+
+## API notes
+
+- `doc.at(pointer)` takes an [RFC 6901 JSON Pointer]
+  (`/items/0/name`, `~0`/`~1` escapes); the empty string returns the
+  whole document. Missing paths return null.
+- `close()` frees the native document (roughly input-sized memory the
+  GC cannot see). A finalizer covers forgotten documents, but call
+  `close` for anything large.
+- Decoded values have the same runtime types as `jsonDecode`:
+  `Map<String, dynamic>`, `List<dynamic>`, `String`, `int`, `double`,
+  `bool`, null. Unsigned 64-bit values above `int` range come back as
+  doubles, matching `jsonDecode`.
+- Invalid JSON throws `FormatException` with simdjson's error message.
+
+[RFC 6901 JSON Pointer]: https://www.rfc-editor.org/rfc/rfc6901
+
+## Platform support
+
+Dart 3.10+ with build hooks: `dart run`, `dart test`, and `dart build`
+compile the C++ automatically (a C++17 toolchain must be present:
+Xcode CLT, gcc/clang, or MSVC). Verified on macOS arm64 and Linux
+x64 (CI). Flutter support arrives when build hooks land in stable
+Flutter.
+
+## Credits and licenses
+
+This package is MIT licensed. It vendors the
+[simdjson](https://github.com/simdjson/simdjson) single-header
+amalgamation (v4.6.4), Apache License 2.0; see
+`src/third_party/simdjson/LICENSE`.
