@@ -16,6 +16,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <new>
 #include <string>
 #include <vector>
 
@@ -37,6 +38,18 @@ class TapeWriter {
     const size_t at = bytes_.size();
     bytes_.resize(at + length);
     std::memcpy(bytes_.data() + at, data, length);
+  }
+
+  // For counts that are only known after iterating: reserves space now,
+  // patched via patch_u32 later.
+  size_t reserve_u32() {
+    const size_t at = bytes_.size();
+    bytes_.resize(at + 4);
+    return at;
+  }
+
+  void patch_u32(size_t at, uint32_t v) {
+    std::memcpy(bytes_.data() + at, &v, 4);
   }
 
   // Transfers ownership of the buffer to a malloc'd block.
@@ -114,11 +127,16 @@ simdjson::error_code write_element(const simdjson::dom::element& element,
       auto error = element.get(array);
       if (error) return error;
       tape.u8(0x06);
-      tape.u32(static_cast<uint32_t>(array.size()));
+      // dom::array::size() saturates at 0xFFFFFF; count while iterating
+      // instead. The 4 GB document cap keeps the count within u32.
+      const size_t count_at = tape.reserve_u32();
+      uint32_t count = 0;
       for (auto child : array) {
         auto child_error = write_element(child, tape);
         if (child_error) return child_error;
+        ++count;
       }
+      tape.patch_u32(count_at, count);
       return simdjson::SUCCESS;
     }
     case simdjson::dom::element_type::OBJECT: {
@@ -126,14 +144,17 @@ simdjson::error_code write_element(const simdjson::dom::element& element,
       auto error = element.get(object);
       if (error) return error;
       tape.u8(0x07);
-      tape.u32(static_cast<uint32_t>(object.size()));
+      const size_t count_at = tape.reserve_u32();
+      uint32_t count = 0;
       for (auto field : object) {
         const std::string_view key = field.key;
         tape.u32(static_cast<uint32_t>(key.size()));
         tape.raw(key.data(), key.size());
         auto child_error = write_element(field.value, tape);
         if (child_error) return child_error;
+        ++count;
       }
+      tape.patch_u32(count_at, count);
       return simdjson::SUCCESS;
     }
   }
@@ -154,37 +175,54 @@ struct SjResult {
   uint64_t tape_length;
 };
 
+// No C++ exception may cross the FFI boundary; every entry point catches
+// everything (in practice only std::bad_alloc) and reports MEMALLOC.
+void fail_alloc(SjResult* result) {
+  if (result->tape != nullptr) {
+    std::free(result->tape);
+    result->tape = nullptr;
+    result->tape_length = 0;
+  }
+  result->error_code = static_cast<int32_t>(simdjson::MEMALLOC);
+  result->error_message = simdjson::error_message(simdjson::MEMALLOC);
+}
+
 void sj_parse(const uint8_t* json, uint64_t length, SjResult* result) {
   result->error_code = 0;
   result->error_message = nullptr;
   result->tape = nullptr;
   result->tape_length = 0;
 
-  static thread_local simdjson::dom::parser parser;
-  simdjson::dom::element root;
-  const auto error = parser
-                         .parse(reinterpret_cast<const char*>(json), length)
-                         .get(root);
-  if (error) {
-    result->error_code = static_cast<int32_t>(error);
-    result->error_message = simdjson::error_message(error);
-    return;
-  }
+  try {
+    static thread_local simdjson::dom::parser parser;
+    simdjson::dom::element root;
+    // The Dart side already provides SIMDJSON_PADDING bytes, so skip the
+    // parser's internal defensive copy (realloc_if_needed = false).
+    const auto error =
+        parser.parse(reinterpret_cast<const char*>(json), length, false)
+            .get(root);
+    if (error) {
+      result->error_code = static_cast<int32_t>(error);
+      result->error_message = simdjson::error_message(error);
+      return;
+    }
 
-  TapeWriter tape;
-  const auto write_error = write_element(root, tape);
-  if (write_error) {
-    result->error_code = static_cast<int32_t>(write_error);
-    result->error_message = simdjson::error_message(write_error);
-    return;
-  }
+    TapeWriter tape;
+    const auto write_error = write_element(root, tape);
+    if (write_error) {
+      result->error_code = static_cast<int32_t>(write_error);
+      result->error_message = simdjson::error_message(write_error);
+      return;
+    }
 
-  size_t tape_length = 0;
-  result->tape = tape.release(&tape_length);
-  result->tape_length = tape_length;
-  if (result->tape == nullptr) {
-    result->error_code = static_cast<int32_t>(simdjson::MEMALLOC);
-    result->error_message = simdjson::error_message(simdjson::MEMALLOC);
+    size_t tape_length = 0;
+    result->tape = tape.release(&tape_length);
+    result->tape_length = tape_length;
+    if (result->tape == nullptr) {
+      fail_alloc(result);
+    }
+  } catch (...) {
+    fail_alloc(result);
   }
 }
 
@@ -205,17 +243,28 @@ void* sj_open(const uint8_t* json, uint64_t length, SjResult* result) {
   result->tape = nullptr;
   result->tape_length = 0;
 
-  auto* document = new SjDocument();
-  const auto error =
-      document->parser.parse(reinterpret_cast<const char*>(json), length)
-          .get(document->root);
-  if (error) {
-    result->error_code = static_cast<int32_t>(error);
-    result->error_message = simdjson::error_message(error);
-    delete document;
+  auto* document = new (std::nothrow) SjDocument();
+  if (document == nullptr) {
+    fail_alloc(result);
     return nullptr;
   }
-  return document;
+  try {
+    const auto error =
+        document->parser
+            .parse(reinterpret_cast<const char*>(json), length, false)
+            .get(document->root);
+    if (error) {
+      result->error_code = static_cast<int32_t>(error);
+      result->error_message = simdjson::error_message(error);
+      delete document;
+      return nullptr;
+    }
+    return document;
+  } catch (...) {
+    delete document;
+    fail_alloc(result);
+    return nullptr;
+  }
 }
 
 // Resolves a JSON Pointer (RFC 6901) inside an open document and
@@ -229,35 +278,38 @@ void sj_at(void* handle, const uint8_t* pointer, uint64_t pointer_length,
   result->tape = nullptr;
   result->tape_length = 0;
 
-  auto* document = static_cast<SjDocument*>(handle);
-  simdjson::dom::element element;
-  const auto error =
-      document->root
-          .at_pointer(std::string_view(
-              reinterpret_cast<const char*>(pointer), pointer_length))
-          .get(element);
-  if (error) {
-    const bool not_found = error == simdjson::NO_SUCH_FIELD ||
-                           error == simdjson::INDEX_OUT_OF_BOUNDS ||
-                           error == simdjson::INCORRECT_TYPE;
-    result->error_code = not_found ? -1 : static_cast<int32_t>(error);
-    result->error_message = simdjson::error_message(error);
-    return;
-  }
+  try {
+    auto* document = static_cast<SjDocument*>(handle);
+    simdjson::dom::element element;
+    const auto error =
+        document->root
+            .at_pointer(std::string_view(
+                reinterpret_cast<const char*>(pointer), pointer_length))
+            .get(element);
+    if (error) {
+      const bool not_found = error == simdjson::NO_SUCH_FIELD ||
+                             error == simdjson::INDEX_OUT_OF_BOUNDS ||
+                             error == simdjson::INCORRECT_TYPE;
+      result->error_code = not_found ? -1 : static_cast<int32_t>(error);
+      result->error_message = simdjson::error_message(error);
+      return;
+    }
 
-  TapeWriter tape;
-  const auto write_error = write_element(element, tape);
-  if (write_error) {
-    result->error_code = static_cast<int32_t>(write_error);
-    result->error_message = simdjson::error_message(write_error);
-    return;
-  }
-  size_t tape_length = 0;
-  result->tape = tape.release(&tape_length);
-  result->tape_length = tape_length;
-  if (result->tape == nullptr) {
-    result->error_code = static_cast<int32_t>(simdjson::MEMALLOC);
-    result->error_message = simdjson::error_message(simdjson::MEMALLOC);
+    TapeWriter tape;
+    const auto write_error = write_element(element, tape);
+    if (write_error) {
+      result->error_code = static_cast<int32_t>(write_error);
+      result->error_message = simdjson::error_message(write_error);
+      return;
+    }
+    size_t tape_length = 0;
+    result->tape = tape.release(&tape_length);
+    result->tape_length = tape_length;
+    if (result->tape == nullptr) {
+      fail_alloc(result);
+    }
+  } catch (...) {
+    fail_alloc(result);
   }
 }
 

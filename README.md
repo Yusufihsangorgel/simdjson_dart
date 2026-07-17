@@ -35,7 +35,7 @@ Medians on an Apple Silicon MacBook (macOS arm64, Dart 3.11), synthetic
 workloads from `bench/bench.dart`. Baseline is `dart:convert` doing the
 same work, including reading the results (its maps materialize lazily).
 
-| Workload (~9 MB) | Read 3 values | Full decode + read all |
+| Workload (6.7-9.2 MB) | Read 3 values | Full decode + read all |
 |---|---|---|
 | API-like objects | **10.3x** | 1.19x |
 | Number-heavy arrays | **5.4x** | 1.75x |
@@ -46,7 +46,7 @@ What this means in practice:
 - The big win is `SimdJsonDocument`: when you do not need every field,
   parse throughput reaches multiple GB/s because the skipped parts are
   never turned into Dart objects.
-- Full decoding from bytes is 1.2-1.8x, best on number-heavy data
+- Full decoding from bytes is 1.1-1.8x, best on number-heavy data
   (`dart:convert`'s number parsing is the slower path, see
   [dart-lang/sdk#55522]).
 - If your input is already a Dart `String` and you decode all of it,
@@ -70,16 +70,29 @@ What this means in practice:
   `bool`, null. Unsigned 64-bit values above `int` range come back as
   doubles, matching `jsonDecode`.
 - Invalid JSON throws `FormatException` with simdjson's error message.
+- Safe to use from multiple isolates; each thread keeps its own parser.
+  A thread's parser retains its largest-seen buffer capacity for reuse.
 
 [RFC 6901 JSON Pointer]: https://www.rfc-editor.org/rfc/rfc6901
+
+## Differences from jsonDecode
+
+simdjson validates strictly, so a few inputs `jsonDecode` accepts are
+rejected with `FormatException` here:
+
+- Numbers outside the representable range: `1e999` (jsonDecode returns
+  `Infinity`) and integers beyond the unsigned 64-bit range (jsonDecode
+  returns a double).
+- Lone surrogate escapes such as `"\ud800"`.
+- Nesting deeper than 1024 levels, and documents over 4 GB.
 
 ## Platform support
 
 Dart 3.10+ with build hooks: `dart run`, `dart test`, and `dart build`
 compile the C++ automatically (a C++17 toolchain must be present:
-Xcode CLT, gcc/clang, or MSVC). Verified on macOS arm64 and Linux
-x64 (CI). Flutter support arrives when build hooks land in stable
-Flutter.
+Xcode CLT, gcc/clang, or MSVC). Developed and verified on macOS arm64;
+CI covers Linux, macOS, and Windows. Flutter support arrives when
+build hooks land in stable Flutter.
 
 ## Credits and licenses
 

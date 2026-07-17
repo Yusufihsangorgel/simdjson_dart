@@ -13,7 +13,9 @@ void main(List<String> args) async {
         'src/third_party/simdjson/simdjson.cpp',
       ],
       language: Language.cpp,
-      flags: ['-std=c++17', '-O2'],
+      // Translated per compiler (-std= vs /std:); raw flags would be
+      // silently ignored by MSVC.
+      std: 'c++17',
     );
     await builder.run(input: input, output: output);
   });

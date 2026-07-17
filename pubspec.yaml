@@ -1,7 +1,7 @@
 name: simdjson
 description: >-
-  Fast JSON decoding for Dart using the simdjson C++ library over FFI.
-  A drop-in alternative to jsonDecode for large documents.
+  Fast JSON for Dart using the simdjson C++ library over FFI. Lazy
+  document access for large payloads plus jsonDecode-compatible decoding.
 version: 0.1.0
 repository: https://github.com/Yusufihsangorgel/simdjson
 
@@ -16,7 +16,6 @@ environment:
   sdk: ^3.10.0
 
 dependencies:
-  code_assets: ^1.2.1
   hooks: ^2.1.0
   native_toolchain_c: ^0.19.3
 

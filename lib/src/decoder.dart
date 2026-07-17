@@ -55,15 +55,23 @@ String errorMessageOf(SjResult r) {
   return utf8.decode(bytes.asTypedList(length));
 }
 
-/// Allocates [bytes] of native memory.
-Pointer<Uint8> allocateBytes(int bytes) => _mallocNative(bytes).cast<Uint8>();
+/// Allocates [bytes] of native memory. Throws [StateError] when the
+/// allocation fails.
+Pointer<Uint8> allocateBytes(int bytes) {
+  // malloc(0) may legally return null; always request at least a byte.
+  final pointer = _mallocNative(bytes < 1 ? 1 : bytes);
+  if (pointer == nullptr) {
+    throw StateError('native allocation of $bytes bytes failed');
+  }
+  return pointer.cast<Uint8>();
+}
 
 /// Frees memory from [allocateBytes].
 void freeBytes(Pointer<Uint8> pointer) => _freeNative(pointer.cast());
 
-/// Allocates a zeroed [SjResult].
+/// Allocates an [SjResult]; the C side writes every field.
 Pointer<SjResult> allocateResult() =>
-    _mallocNative(sizeOf<SjResult>()).cast<SjResult>();
+    allocateBytes(sizeOf<SjResult>()).cast<SjResult>();
 
 /// Frees a result from [allocateResult].
 void freeResult(Pointer<SjResult> pointer) => _freeNative(pointer.cast());

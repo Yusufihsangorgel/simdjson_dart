@@ -96,6 +96,28 @@ void main() {
     expect(simdJsonDecodeBytes(bytes), jsonDecode(utf8.decode(bytes)));
   });
 
+  test('last duplicate key wins, like jsonDecode', () {
+    const input = '{"a": 1, "a": 2}';
+    expect(simdJsonDecode(input), jsonDecode(input));
+    expect(simdJsonDecode(input), {'a': 2});
+  });
+
+  test(
+    'arrays beyond the 24-bit size saturation decode completely',
+    () {
+      // dom::array::size() saturates at 0xFFFFFF; the shim must count
+      // elements itself or the tail is silently dropped.
+      const count = 0xFFFFFF + 5;
+      final json = StringBuffer('[')
+        ..writeAll(Iterable<int>.generate(count, (i) => i & 7), ',')
+        ..write(']');
+      final decoded = simdJsonDecode(json.toString()) as List;
+      expect(decoded.length, count);
+      expect(decoded.last, (count - 1) & 7);
+    },
+    timeout: const Timeout(Duration(minutes: 2)),
+  );
+
   test('handles a large synthetic document identically', () {
     final doc = {
       'items': [
