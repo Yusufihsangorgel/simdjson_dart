@@ -1,39 +1,17 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400">
-  <defs>
-    <pattern id="dots" width="28" height="28" patternUnits="userSpaceOnUse">
-      <circle cx="2" cy="2" r="1.6" fill="#E2E8F0" fill-opacity="0.05"/>
-    </pattern>
-  </defs>
-
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="400" viewBox="0 0 1200 400" font-family="Menlo, monospace">
   <rect width="1200" height="400" fill="#0B1220"/>
-  <rect width="1200" height="400" fill="url(#dots)"/>
-
-  <!-- Motif: { } with four speed lines passing through -->
-  <g stroke="#38BDF8" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round">
-    <!-- left brace -->
-    <path d="M 772 88
-             C 750 88 742 100 742 118
-             L 742 148
-             C 742 166 734 172 720 172
-             C 734 172 742 178 742 196
-             L 742 226
-             C 742 244 750 256 772 256"/>
-    <!-- right brace -->
-    <path d="M 1028 88
-             C 1050 88 1058 100 1058 118
-             L 1058 148
-             C 1058 166 1066 172 1080 172
-             C 1066 172 1058 178 1058 196
-             L 1058 226
-             C 1058 244 1050 256 1028 256"/>
-    <!-- four speed lines with chevron heads; the middle pair exits through } -->
-    <path d="M 660 118 H 940 M 940 118 l -16 -10 M 940 118 l -16 10"/>
-    <path d="M 696 154 H 1116 M 1116 154 l -16 -10 M 1116 154 l -16 10"/>
-    <path d="M 696 190 H 1116 M 1116 190 l -16 -10 M 1116 190 l -16 10"/>
-    <path d="M 660 226 H 940 M 940 226 l -16 -10 M 940 226 l -16 10"/>
+  <g font-size="19" opacity="0.55">
+    <text x="800" y="96" fill="#334155">{</text>
+    <text x="826" y="130" fill="#334155">"id": 90421,</text>
+    <text x="826" y="164" fill="#334155">"meta": { ... },</text>
+    <text x="826" y="198" fill="#38BDF8">"user": "ada",</text>
+    <text x="826" y="232" fill="#334155">"items": [ ... ],</text>
+    <text x="826" y="266" fill="#38BDF8">"total": 1250,</text>
+    <text x="826" y="300" fill="#334155">"raw": "..."</text>
+    <text x="800" y="334" fill="#334155">}</text>
   </g>
-
-  <!-- Wordmark, bottom-left -->
-  <text x="64" y="308" font-family="Menlo" font-size="64" font-weight="bold" fill="#E2E8F0">simdjson_dart</text>
-  <text x="64" y="352" font-family="Menlo" font-size="24" fill="#94A3B8">Fast JSON for Dart &#183; simdjson C++ over FFI</text>
+  <path d="M770 192 L740 192" stroke="#38BDF8" stroke-width="1.5" opacity="0.7"/>
+  <path d="M770 260 L740 260" stroke="#38BDF8" stroke-width="1.5" opacity="0.7"/>
+  <text x="64" y="212" font-size="56" font-weight="bold" fill="#E2E8F0">simdjson_dart</text>
+  <text x="66" y="256" font-size="23" fill="#94A3B8">SIMD JSON over FFI, read only the fields you need</text>
 </svg>
