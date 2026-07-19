@@ -1,3 +1,10 @@
+## 0.1.3
+
+- Example: rewrite it around the real use case. It now builds a multi-megabyte
+  paginated payload and pulls a few fields (the page header and first record) by
+  selective access, which is where the package is faster than a full decode,
+  alongside the full-decode path and a rejected-input case.
+
 ## 0.1.2
 
 - Docs: tightened the README and added an architecture diagram.
