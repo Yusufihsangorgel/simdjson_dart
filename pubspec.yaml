@@ -15,12 +15,10 @@ topics:
 
 screenshots:
   - description: >-
-      Relative throughput against dart:convert on three JSON corpora. Reading
-      three values out of 6.7 MB of string-heavy JSON is 14.8x faster; decoding
-      in full and reading every field is 1.19x to 1.75x. The note under the
-      chart says when to keep dart:convert instead.
+      Throughput against dart:convert on three JSON corpora: reading three values 
+      out of 6.7 MB of string-heavy JSON is 14.8x faster, decoding every field is 
+      1.19x to 1.75x.
     path: doc/bench.png
-
 environment:
   sdk: ^3.10.0
 
