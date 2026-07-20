@@ -2,7 +2,7 @@ name: simdjson_dart
 description: >-
   Fast JSON for Dart using the simdjson C++ library over FFI. Lazy
   document access for large payloads plus jsonDecode-compatible decoding.
-version: 0.2.0
+version: 0.2.1
 repository: https://github.com/Yusufihsangorgel/simdjson_dart
 issue_tracker: https://github.com/Yusufihsangorgel/simdjson_dart/issues
 
@@ -12,6 +12,14 @@ topics:
   - ffi
   - parser
   - simd
+
+screenshots:
+  - description: >-
+      Relative throughput against dart:convert on three JSON corpora. Reading
+      three values out of 6.7 MB of string-heavy JSON is 14.8x faster; decoding
+      in full and reading every field is 1.19x to 1.75x. The note under the
+      chart says when to keep dart:convert instead.
+    path: doc/bench.png
 
 environment:
   sdk: ^3.10.0

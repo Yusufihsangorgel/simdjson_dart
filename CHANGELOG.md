@@ -1,3 +1,11 @@
+## 0.2.1
+
+- Declare the benchmark chart in `pubspec.yaml` so pub.dev renders it on the
+  package page. The chart was already in the repository and the README, but
+  pub.dev shows only what the `screenshots:` field points at, so the page a
+  reader lands on from search opened with text where the measurement should
+  have been.
+
 ## 0.2.0
 
 - Add `simdJsonDecodeNdjson` and `simdJsonDecodeNdjsonBytes` for
