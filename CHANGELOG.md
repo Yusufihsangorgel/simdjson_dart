@@ -1,3 +1,13 @@
+## 0.2.3
+
+- Widen the native-toolchain constraints so the package can be installed in a
+  Flutter app at all. `hooks` 2.1.0 and `native_toolchain_c` 0.19.3 raised their
+  `meta` floor to ^1.19.0, and Flutter's SDK pins `meta` to 1.17.0, so
+  `flutter pub add` failed at version solving with "flutter from sdk is
+  incompatible". Allowing `hooks >=2.0.2` and `native_toolchain_c >=0.19.2`
+  lets the solver pick a version that works with the pinned `meta`, while a
+  pure-Dart project still resolves to the newest. No API or behaviour change.
+
 ## 0.2.2
 
 - Shorten the screenshot description. pub.dev accepts up to 200 characters but
