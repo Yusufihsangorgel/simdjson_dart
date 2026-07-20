@@ -25,6 +25,17 @@ external void sjParse(
   Pointer<SjResult> result,
 );
 
+/// Parses newline-delimited JSON. The tape is a u32 document count followed
+/// by that many values in the [sjParse] format.
+@Native<Void Function(Pointer<Uint8>, Uint64, Pointer<SjResult>)>(
+  symbol: 'sj_parse_ndjson',
+)
+external void sjParseNdjson(
+  Pointer<Uint8> json,
+  int length,
+  Pointer<SjResult> result,
+);
+
 @Native<Void Function(Pointer<Uint8>)>(symbol: 'sj_free')
 external void sjFree(Pointer<Uint8> tape);
 

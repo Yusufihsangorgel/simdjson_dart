@@ -6,5 +6,10 @@
 /// without materializing the rest.
 library;
 
-export 'src/decoder.dart' show simdJsonDecode, simdJsonDecodeBytes;
+export 'src/decoder.dart'
+    show
+        simdJsonDecode,
+        simdJsonDecodeBytes,
+        simdJsonDecodeNdjson,
+        simdJsonDecodeNdjsonBytes;
 export 'src/document.dart' show SimdJsonDocument;

@@ -41,8 +41,61 @@ Object? simdJsonDecodeBytes(Uint8List json) {
   }
 }
 
+/// Decodes newline-delimited JSON: one document per line, the shape log
+/// files and data pipelines ship (`.ndjson`, `.jsonl`).
+///
+/// Returns one decoded value per document, in order, with the same shapes
+/// `jsonDecode` returns. Blank lines are skipped. The whole input is parsed
+/// in a single native pass, which is where this beats decoding each line
+/// separately with `dart:convert`.
+///
+/// ```dart
+/// final rows = simdJsonDecodeNdjson('{"a":1}\n{"a":2}\n');
+/// print(rows.length); // 2
+/// ```
+///
+/// Throws [FormatException] if any document is invalid; the message is
+/// simdjson's own diagnostic.
+List<Object?> simdJsonDecodeNdjson(String ndjson) =>
+    simdJsonDecodeNdjsonBytes(utf8.encode(ndjson));
+
+/// Like [simdJsonDecodeNdjson], but takes UTF-8 bytes directly. Prefer this
+/// when the data arrives as bytes, which for NDJSON it usually does.
+List<Object?> simdJsonDecodeNdjsonBytes(Uint8List ndjson) {
+  // Same padding contract as simdJsonDecodeBytes: simdjson reads up to 64
+  // bytes past the end.
+  final input = allocateBytes(ndjson.length + 64);
+  final result = allocateResult();
+  try {
+    input.asTypedList(ndjson.length + 64)
+      ..setAll(0, ndjson)
+      ..fillRange(ndjson.length, ndjson.length + 64, 0);
+    sjParseNdjson(input, ndjson.length, result);
+
+    final r = result.ref;
+    if (r.errorCode != 0) {
+      throw FormatException(errorMessageOf(r), ndjson);
+    }
+    try {
+      return decodeTapeMany(r.tape.asTypedList(r.tapeLength));
+    } finally {
+      sjFree(r.tape);
+    }
+  } finally {
+    freeBytes(input);
+    freeResult(result);
+  }
+}
+
 /// Decodes one tape buffer produced by the shim into Dart objects.
 Object? decodeTape(Uint8List tape) => _TapeReader(tape).read();
+
+/// Decodes a multi-document tape: a u32 count followed by that many values.
+List<Object?> decodeTapeMany(Uint8List tape) {
+  final reader = _TapeReader(tape);
+  final count = reader._readU32();
+  return List<Object?>.generate(count, (_) => reader.read(), growable: true);
+}
 
 /// Reads the error message out of a result struct.
 String errorMessageOf(SjResult r) {

@@ -234,6 +234,80 @@ SJ_EXPORT void sj_parse(const uint8_t* json, uint64_t length, SjResult* result) 
   }
 }
 
+// Parses newline-delimited JSON (one document per line, the shape log and
+// data pipelines ship). The tape is a u32 document count followed by each
+// document's value in exactly the format sj_parse produces, so the Dart
+// reader decodes the count and then reads that many values.
+SJ_EXPORT void sj_parse_ndjson(const uint8_t* json, uint64_t length,
+                               SjResult* result) {
+  result->error_code = 0;
+  result->error_message = nullptr;
+  result->tape = nullptr;
+  result->tape_length = 0;
+
+  try {
+    static thread_local simdjson::dom::parser parser;
+    simdjson::dom::document_stream stream;
+    // As in sj_parse, the Dart side already provides SIMDJSON_PADDING bytes
+    // past `length`, so the stream can read ahead safely.
+    // The two-argument overload is deleted upstream to stop callers passing a
+    // length where a batch size is expected, so name the batch size too.
+    const auto open_error =
+        parser
+            .parse_many(reinterpret_cast<const char*>(json), length,
+                        simdjson::dom::DEFAULT_BATCH_SIZE)
+            .get(stream);
+    if (open_error) {
+      result->error_code = static_cast<int32_t>(open_error);
+      result->error_message = simdjson::error_message(open_error);
+      return;
+    }
+
+    TapeWriter tape;
+    // Count is only known after the stream is drained; reserve and patch.
+    const size_t count_at = tape.reserve_u32();
+    uint32_t count = 0;
+    for (auto document : stream) {
+      simdjson::dom::element element;
+      const auto document_error = document.get(element);
+      if (document_error) {
+        result->error_code = static_cast<int32_t>(document_error);
+        result->error_message = simdjson::error_message(document_error);
+        return;
+      }
+      const auto write_error = write_element(element, tape);
+      if (write_error) {
+        result->error_code = static_cast<int32_t>(write_error);
+        result->error_message = simdjson::error_message(write_error);
+        return;
+      }
+      count++;
+    }
+
+    // A document_stream treats trailing bytes that do not yet form a complete
+    // document as "maybe completed by the next batch" and drops them. For a
+    // whole-buffer parse that is silent data loss: the last line of a
+    // truncated log would just disappear. Report it instead.
+    if (stream.truncated_bytes() > 0) {
+      static const char kTruncated[] =
+          "NDJSON input ends with an incomplete document";
+      result->error_code = static_cast<int32_t>(simdjson::TAPE_ERROR);
+      result->error_message = kTruncated;
+      return;
+    }
+    tape.patch_u32(count_at, count);
+
+    size_t tape_length = 0;
+    result->tape = tape.release(&tape_length);
+    result->tape_length = tape_length;
+    if (result->tape == nullptr) {
+      fail_alloc(result);
+    }
+  } catch (...) {
+    fail_alloc(result);
+  }
+}
+
 SJ_EXPORT void sj_free(uint8_t* tape) { std::free(tape); }
 
 // A parsed document held open for lazy, repeated access. The parser owns
