@@ -1,3 +1,15 @@
+## 0.2.4
+
+- Publish the crossover point. The benchmark table was only at 6-9 MB, which
+  left the honest question unanswered: the FFI boundary is not free, so below
+  some size dart:convert wins. `bench/crossover.dart` sweeps from 1 KB to 4 MB
+  reading the same two fields through each engine, and the README now carries
+  the curve. The crossover for the lazy `SimdJsonDocument.at` path is around
+  2 KB: below it dart:convert decodes faster than it takes to cross into native
+  code (0.4x at 1 KB), above it simdjson pulls away (5.7x at 4 KB to 10.4x at
+  4 MB). This is the number to decide adoption on, and it says plainly: use it
+  for reading part of a payload that is more than a few KB, not for small ones.
+
 ## 0.2.3
 
 - Widen the native-toolchain constraints so the package can be installed in a

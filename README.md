@@ -78,6 +78,26 @@ same work, including reading the results (its maps materialize lazily).
 | Number-heavy arrays | **5.4x** | 1.75x |
 | String-heavy | **14.8x** | 1.21x |
 
+### Where the lazy path starts to pay off
+
+The table above is at 6-9 MB. The FFI boundary is not free, so at small sizes
+`dart:convert` wins; `bench/crossover.dart` sweeps the range to find where
+`SimdJsonDocument.at` overtakes reading the same fields through `jsonDecode`:
+
+![The lazy path overtakes jsonDecode at about 2 KB and pulls away with size, reaching 10x at 4 MB](https://raw.githubusercontent.com/Yusufihsangorgel/simdjson_dart/main/doc/crossover.png)
+
+| Payload | jsonDecode + read | `SimdJsonDocument.at` | Winner |
+|---|---|---|---|
+| 1 KB | 0.004 ms | 0.009 ms | dart:convert 2.3x |
+| 4 KB | 0.017 ms | 0.003 ms | **simd 5.7x** |
+| 64 KB | 0.216 ms | 0.033 ms | **simd 6.5x** |
+| 1 MB | 3.56 ms | 0.49 ms | **simd 7.3x** |
+| 4 MB | 20.3 ms | 1.95 ms | **simd 10.4x** |
+
+The crossover is around 2 KB. Below it, reach for `dart:convert`; a JSON that
+small decodes faster than it takes to cross into native code. From a few KB up,
+the lazy path wins and the gap widens with size.
+
 What this means in practice:
 
 - The big win is `SimdJsonDocument`: when you do not need every field,

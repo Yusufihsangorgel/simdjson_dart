@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1100" height="470" viewBox="0 0 1100 470" font-family="Menlo, monospace">
+  <rect width="1100" height="470" fill="#0B1220"/>
+  <text x="48" y="48" font-size="22" font-weight="bold" fill="#E2E8F0">Reading a few fields: where SimdJsonDocument.at wins</text>
+  <text x="48" y="74" font-size="13" fill="#94A3B8">How many times faster than jsonDecode-then-read, by payload size. Apple Silicon, Dart 3.11.</text>
+
+  <!-- plot: x = size buckets at 130,255,...,1000 ; y = speedup 0..11 over 400..110 -->
+  <line x1="130" y1="400" x2="1000" y2="400" stroke="#334155"/>
+  <line x1="130" y1="110" x2="130" y2="400" stroke="#334155"/>
+
+  <!-- y gridlines: 1x (break-even), 5x, 10x. scale: 400 - value*26 -->
+  <g font-size="12" fill="#64748B">
+    <line x1="130" y1="374" x2="1000" y2="374" stroke="#F8696B" stroke-dasharray="4 4" opacity="0.6"/>
+    <text x="96" y="378" fill="#F8696B">1x</text>
+    <line x1="130" y1="270" x2="1000" y2="270" stroke="#1E293B"/>
+    <text x="96" y="274">5x</text>
+    <line x1="130" y1="140" x2="1000" y2="140" stroke="#1E293B"/>
+    <text x="88" y="144">10x</text>
+    <text x="30" y="270" transform="rotate(-90 30 270)" fill="#94A3B8">speedup</text>
+  </g>
+
+  <!-- x ticks -->
+  <g font-size="12" fill="#94A3B8" text-anchor="middle">
+    <text x="130" y="420">1 KB</text>
+    <text x="275" y="420">4 KB</text>
+    <text x="420" y="420">16 KB</text>
+    <text x="565" y="420">64 KB</text>
+    <text x="710" y="420">256 KB</text>
+    <text x="855" y="420">1 MB</text>
+    <text x="1000" y="420">4 MB</text>
+  </g>
+
+  <!-- data: 0.43x(=1/2.3), 5.7, 5.7, 6.5, 7.2, 7.3, 10.4 -> y = 400 - v*26 -->
+  <!-- 0.43 -> 388.8 ; 5.7 -> 251.8 ; 5.7 -> 251.8 ; 6.5 -> 231 ; 7.2 -> 212.8 ; 7.3 -> 210.2 ; 10.4 -> 129.6 -->
+  <polyline points="130,388.8 275,251.8 420,251.8 565,231 710,212.8 855,210.2 1000,129.6"
+            fill="none" stroke="#38BDF8" stroke-width="3"/>
+  <g fill="#38BDF8">
+    <circle cx="130" cy="388.8" r="5"/>
+    <circle cx="275" cy="251.8" r="5"/>
+    <circle cx="420" cy="251.8" r="5"/>
+    <circle cx="565" cy="231" r="5"/>
+    <circle cx="710" cy="212.8" r="5"/>
+    <circle cx="855" cy="210.2" r="5"/>
+    <circle cx="1000" cy="129.6" r="5"/>
+  </g>
+  <text x="130" y="405" font-size="12" fill="#F8696B" text-anchor="middle">0.4x</text>
+  <text x="1000" y="120" font-size="13" fill="#38BDF8" text-anchor="end">10.4x</text>
+
+  <!-- crossover marker between 1KB and 4KB -->
+  <text x="200" y="356" font-size="12" fill="#94A3B8" text-anchor="middle">crossover</text>
+  <text x="200" y="371" font-size="12" fill="#94A3B8" text-anchor="middle">~2 KB</text>
+
+  <text x="48" y="452" font-size="12" fill="#64748B">Below the dashed 1x line dart:convert wins (the FFI cost dominates); above a few KB the lazy path pulls away.</text>
+</svg>
