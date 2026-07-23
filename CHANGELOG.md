@@ -1,3 +1,10 @@
+## 0.2.5
+
+- Declare `platforms: {linux, macos, windows}` in `pubspec.yaml`. The build
+  hook only ever runs `CBuilder` for the host toolchain and has no
+  Android/iOS support today; pub.dev had inferred support for all five
+  platforms from static analysis alone with no declaration to override it.
+
 ## 0.2.4
 
 - Publish the crossover point. The benchmark table was only at 6-9 MB, which
