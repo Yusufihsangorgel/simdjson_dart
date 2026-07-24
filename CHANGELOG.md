@@ -1,3 +1,10 @@
+## 0.2.6
+
+- Add `example/README.md` for pub.dev's Example tab (it was empty). It walks
+  through the selective-access example — read a few fields from a 3 MB payload
+  without decoding the rest, then the full decode and the error path — with the
+  real output. Docs only.
+
 ## 0.2.5
 
 - Declare `platforms: {linux, macos, windows}` in `pubspec.yaml`. The build
