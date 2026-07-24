@@ -87,6 +87,13 @@ simdjson::error_code write_element(const simdjson::dom::element& element,
       tape.u8(value ? 0x01 : 0x02);
       return simdjson::SUCCESS;
     }
+    case simdjson::dom::element_type::BIGINT:
+      // simdjson 3.x added BIGINT for integers that exceed the 64-bit
+      // range.  Fall through to the existing numeric paths, which coerce
+      // oversized values to double — consistent with dart:convert's
+      // jsonDecode behaviour.  If strict precision for huge integers is
+      // needed, a BigInt.parse(string) callback would have to be routed
+      // from here in a follow-up.
     case simdjson::dom::element_type::INT64: {
       int64_t value;
       auto error = element.get(value);
