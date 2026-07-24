@@ -52,7 +52,11 @@ void main() {
 
       // Each document holds a parser over a 200-element payload; leaking them
       // would run into the hundreds of megabytes long before 3000 iterations.
-      expect(grownMb, lessThan(50), reason: 'grew ${grownMb}MB over 3000 cycles');
+      expect(
+        grownMb,
+        lessThan(50),
+        reason: 'grew ${grownMb}MB over 3000 cycles',
+      );
     });
 
     test('a document that is never closed is reclaimed by the finalizer', () {

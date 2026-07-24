@@ -1,3 +1,9 @@
+## 1.0.1
+
+- Format the native-safety test added in 1.0.0. `test/` ships in the archive and
+  pana scores its formatting, so the unformatted file would have cost points.
+  No code or API change.
+
 ## 1.0.0
 
 The API is stable. No behaviour changes; this freezes the surface after an
