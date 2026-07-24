@@ -1,3 +1,26 @@
+## 1.0.0
+
+The API is stable. No behaviour changes; this freezes the surface after an
+adversarial pass over the part that matters for a package holding native
+memory, and pins what it found as tests.
+
+Verified by execution and now covered by `test/native_safety_test.dart`:
+
+- Using a closed document throws a `StateError` rather than reading freed
+  memory, and closing twice is safe.
+- Malformed input (empty, truncated, an unterminated string, a bad literal,
+  runaway nesting) raises `FormatException`; none of it crashes the process.
+- Parsing and closing 3,000 documents grows RSS by a few megabytes, not the
+  hundreds a leak would cost.
+- A document that is never closed is still reclaimed: growth over repeated
+  batches builds up and then drops to under a megabyte once the GC runs the
+  finalizer, which is what distinguishes a finalizer from a leak.
+
+One honest caveat: the build hooks depend on `native_toolchain_c`, which is
+pre-1.0, so a breaking release there may need a new build of this package. That
+is a build-time dependency and does not reach the public API — the surface
+frozen here is the Dart one.
+
 ## 0.2.6
 
 - Add `example/README.md` for pub.dev's Example tab (it was empty). It walks
