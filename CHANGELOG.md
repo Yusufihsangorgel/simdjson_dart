@@ -1,3 +1,31 @@
+## 1.1.0
+
+- **Match `jsonDecode` on numbers simdjson will not represent.** An integer past
+  `uint64` or an exponent that overflows to infinity is well-formed JSON that
+  `dart:convert` accepts, and this package rejected it with a
+  `FormatException` — a real gap for something whose pitch is returning the
+  same shapes. `simdJsonDecode`, `simdJsonDecodeBytes` and both NDJSON entry
+  points now hand the document to `jsonDecode` when simdjson failed *only* for
+  a number's range (`NUMBER_ERROR` or `BIGINT_ERROR`, nothing wider), so
+  `{"v": 18446744073709551616}` gives a double and `{"v": 1e400}` gives
+  `Infinity`, both equal to `jsonDecode`. NDJSON retries line by line.
+
+  The fix is on the Dart side on purpose. The C++ route — `number_as_string`
+  plus a `BIGINT` case — is wrong at its own boundary: simdjson returns
+  `INVALID_NUMBER` rather than `BIGINT_ERROR` for 20-digit positive overflows,
+  so the whole window `[2^64, 10^20)` never becomes a big integer, and
+  `parse_many` never receives the flag at all, which would leave the two entry
+  points disagreeing. That asymmetry is filed upstream as simdjson/simdjson#2791.
+
+  Cost is a second parse, and only for documents that previously threw; the
+  check sits inside the existing error branch, so nothing changes when simdjson
+  succeeds. Validation is not loosened: malformed input that fails for any
+  other reason still throws, which the tests pin.
+
+  `SimdJsonDocument`, the lazy reader, is unchanged and still throws — it
+  returns a handle rather than a decoded value, so there is nothing to fall
+  back to. Closes #3, reported via #1 by @arrrrny.
+
 ## 1.0.1
 
 - Format the native-safety test added in 1.0.0. `test/` ships in the archive and

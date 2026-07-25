@@ -83,6 +83,64 @@ void main() {
     expect(decoded.single, jsonDecode('[18446744073709551615]')[0]);
   });
 
+  group('numbers simdjson will not represent fall back to jsonDecode', () {
+    // simdjson rejects these with NUMBER_ERROR or BIGINT_ERROR; dart:convert
+    // accepts them. The package promises jsonDecode's shapes, so it retries
+    // with jsonDecode when that is the only reason the parse failed.
+    const cases = <String>[
+      '18446744073709551616', // 2^64, the smallest integer past uint64
+      '99999999999999999999', // 10^20 - 1, the top of the 20-digit window
+      '12345678901234567890123',
+      '-12345678901234567890123',
+      '-9223372036854775809', // one past int64 min
+      '1e400', // overflows to Infinity
+      '-1e400',
+    ];
+    for (final literal in cases) {
+      test(literal, () {
+        final input = '{"v": $literal}';
+        expect(simdJsonDecode(input), jsonDecode(input));
+      });
+    }
+
+    test('NDJSON falls back line by line', () {
+      const stream = '{"v": 18446744073709551616}\n{"v": 1}\n{"v": 1e400}\n';
+      expect(simdJsonDecodeNdjson(stream), [
+        for (final line in stream.split('\n'))
+          if (line.trim().isNotEmpty) jsonDecode(line),
+      ]);
+    });
+
+    test('the fallback does not loosen validation', () {
+      // Every one of these is malformed for a reason that is not a number's
+      // range, so the retry must not rescue them.
+      for (final bad in <String>[
+        '{"v": 01}',
+        '{"v": 1.}',
+        '{"v": +1}',
+        '[1,]',
+        'tru',
+        '',
+      ]) {
+        expect(
+          () => simdJsonDecode(bad),
+          throwsFormatException,
+          reason: 'input ${jsonEncode(bad)}',
+        );
+      }
+    });
+
+    test('SimdJsonDocument keeps simdjson strictness', () {
+      // The lazy reader hands back a handle, not a decoded value, so there is
+      // nothing to fall back to and the parse itself is what fails.
+      // Documented, not an oversight.
+      expect(
+        () => SimdJsonDocument.parse('{"v": 18446744073709551616}'),
+        throwsFormatException,
+      );
+    });
+  });
+
   group('rejects invalid JSON with FormatException', () {
     for (final input in _invalidCases) {
       test(input.isEmpty ? '(empty)' : input, () {

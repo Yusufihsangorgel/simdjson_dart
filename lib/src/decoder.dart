@@ -28,6 +28,9 @@ Object? simdJsonDecodeBytes(Uint8List json) {
 
     final r = result.ref;
     if (r.errorCode != 0) {
+      if (_isNumberRangeError(r.errorCode)) {
+        return jsonDecode(utf8.decode(json));
+      }
       throw FormatException(errorMessageOf(r), json);
     }
     try {
@@ -74,6 +77,14 @@ List<Object?> simdJsonDecodeNdjsonBytes(Uint8List ndjson) {
 
     final r = result.ref;
     if (r.errorCode != 0) {
+      if (_isNumberRangeError(r.errorCode)) {
+        // One bad line fails the whole stream, so redo it line by line.
+        // Blank lines are skipped the way the shim skips them.
+        return [
+          for (final line in utf8.decode(ndjson).split('\n'))
+            if (line.trim().isNotEmpty) jsonDecode(line),
+        ];
+      }
       throw FormatException(errorMessageOf(r), ndjson);
     }
     try {
@@ -96,6 +107,19 @@ List<Object?> decodeTapeMany(Uint8List tape) {
   final count = reader._readU32();
   return List<Object?>.generate(count, (_) => reader.read(), growable: true);
 }
+
+/// simdjson's `NUMBER_ERROR` and `BIGINT_ERROR`, the two codes it raises for a
+/// number that is well-formed JSON but outside the range it represents.
+///
+/// `dart:convert` accepts both — it widens an oversized integer to a double and
+/// gives `Infinity` for an overflowing exponent — so a document rejected only
+/// for this reason is handed to `jsonDecode` rather than thrown back at the
+/// caller. Closing that gap is the point: this package promises the shapes
+/// `jsonDecode` returns.
+///
+/// Deliberately just these two. Widening the set would start masking input that
+/// is genuinely malformed, which is the opposite of useful.
+bool _isNumberRangeError(int code) => code == 9 || code == 10;
 
 /// Reads the error message out of a result struct.
 String errorMessageOf(SjResult r) {

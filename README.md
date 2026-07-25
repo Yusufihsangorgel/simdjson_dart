@@ -137,11 +137,18 @@ What this means in practice:
 simdjson validates strictly, so a few inputs `jsonDecode` accepts are
 rejected with `FormatException` here:
 
-- Numbers outside the representable range: `1e999` (jsonDecode returns
-  `Infinity`) and integers beyond the unsigned 64-bit range (jsonDecode
-  returns a double).
 - Lone surrogate escapes such as `"\ud800"`.
 - Nesting deeper than 1024 levels, and documents over 4 GB.
+
+Numbers outside the range simdjson represents used to be on that list. They are
+not any more: `simdJsonDecode`, `simdJsonDecodeBytes` and the NDJSON pair hand
+the document to `jsonDecode` when simdjson rejects it *only* for a number's
+range, so `1e999` gives `Infinity` and an integer past `uint64` gives a double,
+exactly as `dart:convert` does. The retry costs a second parse, but only for
+documents that would otherwise have thrown; nothing changes on the path where
+simdjson succeeds. `SimdJsonDocument`, the lazy reader, still throws — it hands
+back a handle rather than a decoded value, so there is nothing to fall back
+to.
 
 ## Platform support
 
