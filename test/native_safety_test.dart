@@ -59,31 +59,21 @@ void main() {
       );
     });
 
-    test('a document that is never closed is reclaimed by the finalizer', () {
-      final payload = _bytes(
-        '{"items":[${List.generate(200, (i) => '{"id":$i,"n":"x$i"}').join(',')}]}',
-      );
-
-      // A real leak grows by the same amount every batch. A finalizer that
-      // reclaims lets memory build up until the GC runs and then hands most of
-      // it back, so at least one later batch costs almost nothing.
-      var previous = ProcessInfo.currentRss;
-      final growth = <double>[];
-      for (var batch = 0; batch < 6; batch++) {
-        for (var i = 0; i < 3000; i++) {
-          SimdJsonDocument.parseBytes(payload).at('/items/0/id');
-        }
-        final now = ProcessInfo.currentRss;
-        growth.add((now - previous) / (1024 * 1024));
-        previous = now;
-      }
-
-      final flattened = growth.skip(1).any((g) => g < 5);
-      expect(
-        flattened,
-        isTrue,
-        reason: 'growth per batch was $growth; a leak would stay linear',
-      );
-    });
+    // There is deliberately no test here for the NativeFinalizer reclaiming a
+    // document nobody closed. There was one, and it asserted on resident set
+    // size after a fixed amount of work — which is a bet on when the garbage
+    // collector runs. It passed on a developer machine and failed on Linux CI.
+    // A rewrite comparing dropped against retained references was no better:
+    // measured back to back, the two arms came out 123 MB and 177 MB, so the
+    // margin it claimed was not there.
+    //
+    // RSS does not fall when native memory is freed — the allocator keeps it —
+    // so it cannot answer this question, and the collector makes no promise
+    // about timing that a test could hold it to. What is covered instead: the
+    // loop above proves the close() path does not leak, and the tests below
+    // prove a closed document is unusable and that closing twice is safe. The
+    // finalizer remains the safety net for callers who forget, attached in the
+    // constructor; a red build that depends on GC scheduling would only teach
+    // us to ignore red builds.
   });
 }
