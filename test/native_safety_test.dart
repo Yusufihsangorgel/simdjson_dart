@@ -10,6 +10,7 @@ Uint8List _bytes(String s) => Uint8List.fromList(utf8.encode(s));
 /// The safety properties that matter for a package holding native memory:
 /// misuse must raise a Dart error rather than corrupt memory, and neither the
 /// closed nor the forgotten path may leak.
+
 void main() {
   group('native safety', () {
     test('using a closed document throws instead of touching freed memory', () {
@@ -33,31 +34,58 @@ void main() {
       }
     });
 
-    test('parse and close in a loop does not leak', () {
-      final payload = _bytes(
-        '{"items":[${List.generate(200, (i) => '{"id":$i,"n":"x$i"}').join(',')}]}',
-      );
-      // Warm up so the first allocations are not counted as growth.
-      for (var i = 0; i < 200; i++) {
-        SimdJsonDocument.parseBytes(payload).close();
-      }
+    // Every native buffer these entry points allocate has to come back. The
+    // measurement runs in a child process (test/leak_probe.dart) because
+    // `dart test` runs suites concurrently in one process, and the resident set
+    // then reflects whatever the other suites are doing - over 500MB of
+    // unrelated growth when measured from inside a test here.
+    //
+    // Each bound is derived from the payload rather than picked as a round
+    // number: it is the cost of losing the single smallest free on that path,
+    // divided by four. Removing any one free in decoder.dart or document.dart
+    // fails the matching case below.
+    for (final probe in const [
+      ('parseBytes', 'padded input and the tape behind at()', 65.5),
+      ('decodeBytes', 'the tape and the native copy of the input', 65.5),
+      ('ndjson', 'the tape and the native copy of the input', 92.1),
+      ('pointer', 'the native copy of a long JSON pointer', 46.9),
+    ]) {
+      final (mode, what, smallestLeakMb) = probe;
 
-      final before = ProcessInfo.currentRss;
-      for (var i = 0; i < 3000; i++) {
-        SimdJsonDocument.parseBytes(payload)
-          ..at('/items/0/n')
-          ..close();
-      }
-      final grownMb = (ProcessInfo.currentRss - before) / (1024 * 1024);
+      test('$mode releases $what', () {
+        const iterations = 1500;
+        final result = Process.runSync(Platform.resolvedExecutable, [
+          'run',
+          'test/leak_probe.dart',
+          mode,
+          '$iterations',
+        ]);
 
-      // Each document holds a parser over a 200-element payload; leaking them
-      // would run into the hundreds of megabytes long before 3000 iterations.
-      expect(
-        grownMb,
-        lessThan(50),
-        reason: 'grew ${grownMb}MB over 3000 cycles',
-      );
-    });
+        expect(
+          result.exitCode,
+          0,
+          reason: 'leak_probe failed: ${result.stderr}',
+        );
+        final reported = RegExp(
+          r'RSS_DELTA_MB=(-?[0-9.]+)',
+        ).firstMatch(result.stdout as String);
+        expect(
+          reported,
+          isNotNull,
+          reason: 'leak_probe printed no measurement: ${result.stdout}',
+        );
+        final grownMb = double.parse(reported!.group(1)!);
+
+        expect(
+          grownMb,
+          lessThan(smallestLeakMb / 4),
+          reason:
+              'grew ${grownMb}MB over $iterations iterations; losing the '
+              'smallest native buffer on this path would cost '
+              '${smallestLeakMb}MB',
+        );
+      });
+    }
 
     // There is deliberately no test here for the NativeFinalizer reclaiming a
     // document nobody closed. There was one, and it asserted on resident set
@@ -70,8 +98,9 @@ void main() {
     // RSS does not fall when native memory is freed — the allocator keeps it —
     // so it cannot answer this question, and the collector makes no promise
     // about timing that a test could hold it to. What is covered instead: the
-    // loop above proves the close() path does not leak, and the tests below
-    // prove a closed document is unusable and that closing twice is safe. The
+    // probes above prove the entry points release what they allocate, and the
+    // first two tests prove a closed document is unusable and closing twice is
+    // safe. The
     // finalizer remains the safety net for callers who forget, attached in the
     // constructor; a red build that depends on GC scheduling would only teach
     // us to ignore red builds.
