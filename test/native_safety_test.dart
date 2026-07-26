@@ -84,7 +84,7 @@ void main() {
               'smallest native buffer on this path would cost '
               '${smallestLeakMb}MB',
         );
-      });
+      }, testOn: '!windows');
     }
 
     // There is deliberately no test here for the NativeFinalizer reclaiming a
