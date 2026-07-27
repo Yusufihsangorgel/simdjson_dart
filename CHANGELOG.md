@@ -1,3 +1,13 @@
+## 1.1.2
+
+- Lead with what this package is actually for. The description and the README
+  opened on "fast JSON", which is the crowded claim and the weaker one: below
+  about 100 KB `dart:convert` decodes a whole document faster than this can,
+  FFI boundary included, and the README already said so further down. The one
+  thing the built-in cannot do is skip — read three fields out of a 9 MB
+  response and leave the rest as bytes. That is where the 5-14x is, so it is
+  what the first sentence now says. No API or behaviour change.
+
 ## 1.1.1
 
 - Document what a rejection costs, with `bench/reject.dart` behind it. A

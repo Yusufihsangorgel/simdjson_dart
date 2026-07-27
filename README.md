@@ -2,9 +2,17 @@
 
 # simdjson_dart
 
-Fast JSON for Dart, powered by the [simdjson](https://simdjson.org) C++
-library over FFI. The native code is compiled automatically at build
-time through Dart build hooks; there is nothing to install.
+Read a few fields out of a large JSON payload without decoding the rest,
+powered by the [simdjson](https://simdjson.org) C++ library over FFI. The
+native code is compiled automatically at build time through Dart build hooks;
+there is nothing to install.
+
+That first sentence is the whole point. Decoding a document into Dart objects
+is work `dart:convert` already does well, and below about 100 KB it does it
+faster than this package can, FFI boundary included. What it cannot do is
+skip: pull three fields out of a 9 MB response and leave the other 9 MB as
+bytes. That is where the 5-14x lives, and it is the reason to reach for this
+rather than the built-in.
 
 Three APIs:
 

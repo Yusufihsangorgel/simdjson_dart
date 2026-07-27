@@ -1,8 +1,9 @@
 name: simdjson_dart
 description: >-
-  Fast JSON for Dart using the simdjson C++ library over FFI. Lazy
-  document access for large payloads plus jsonDecode-compatible decoding.
-version: 1.1.1
+  Read a few fields out of a large JSON payload without decoding the rest,
+  backed by the simdjson C++ library over FFI. Whole-document and NDJSON
+  decoding too.
+version: 1.1.2
 repository: https://github.com/Yusufihsangorgel/simdjson_dart
 issue_tracker: https://github.com/Yusufihsangorgel/simdjson_dart/issues
 
