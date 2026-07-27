@@ -1,3 +1,13 @@
+## 1.1.1
+
+- Document what a rejection costs, with `bench/reject.dart` behind it. A
+  document that is invalid at its second byte is not rejected in constant
+  time: the input is encoded and copied into native memory before simdjson
+  looks at it, so at 4 MB a rejection costs 13 ms through `simdJsonDecode`
+  and 0.9 ms through `simdJsonDecodeBytes`. That matters for a caller sitting
+  in front of mixed input, which had no way to know it from the docs. No
+  behaviour change.
+
 ## 1.1.0
 
 - **Match `jsonDecode` on numbers simdjson will not represent.** An integer past

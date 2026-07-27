@@ -114,6 +114,31 @@ What this means in practice:
 
 [dart-lang/sdk#55522]: https://github.com/dart-lang/sdk/issues/55522
 
+### What a rejection costs
+
+If you sit in front of mixed input, some of it will not be strict JSON and
+every one of those pays for a `FormatException` instead of a result. That cost
+is not constant: the bytes are encoded and copied into native memory before
+simdjson looks at them, so it scales with the document, not with the distance
+to the error. Rejecting a 4 MB document that is invalid at byte two:
+
+| Size | `simdJsonDecode` | `simdJsonDecodeBytes` | 4 KB head scan |
+| ---- | ---------------- | --------------------- | -------------- |
+| 4 KB | 15 µs | 3.8 µs | 13 µs |
+| 37 KB | 68 µs | 13 µs | 14 µs |
+| 388 KB | 1.87 ms | 178 µs | 10 µs |
+| 4 MB | 12.97 ms | 885 µs | 18 µs |
+
+Two things follow. Hand over bytes rather than a `String` if you reject often —
+most of the gap between the first two columns is the UTF-8 encode that
+`simdJsonDecode` does for you. And if you can tell from the first few kilobytes
+that a document is not strict JSON, checking is worth it above roughly 40 KB;
+below that the scan costs about what the failed parse does.
+
+The third column is a heuristic, not a parse, and it can be wrong in both
+directions — it is here because it is what a caller in front of mixed input
+reaches for. Numbers from `dart run bench/reject.dart` on an Apple M-series.
+
 ## API notes
 
 - `doc.at(pointer)` takes an [RFC 6901 JSON Pointer]
