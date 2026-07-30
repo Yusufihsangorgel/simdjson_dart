@@ -191,6 +191,25 @@ Xcode CLT, gcc/clang, or MSVC). Developed and verified on macOS arm64;
 CI covers Linux, macOS, and Windows. Flutter support arrives when
 build hooks land in stable Flutter.
 
+### Standalone binaries
+
+`dart compile exe` does not run build hooks, so it refuses a package that
+needs them and stops with `'dart compile' does not support build hooks,
+use 'dart build' instead`. Use `dart build` (in preview), which runs the
+hooks and writes the native library beside the executable:
+
+```
+dart build cli
+./build/cli/<os>_<arch>/bundle/bin/<name>
+```
+
+The output is a `bundle/` directory, not a lone file — the executable
+loads its library from `../lib` next to it, so ship the whole folder.
+`dart run` and `dart test` are unaffected. Tracked upstream at
+[dart-lang/sdk#62593].
+
+[dart-lang/sdk#62593]: https://github.com/dart-lang/sdk/issues/62593
+
 ## Credits and licenses
 
 This package is MIT licensed. It vendors the
