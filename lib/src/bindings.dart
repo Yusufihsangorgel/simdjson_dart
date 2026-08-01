@@ -48,6 +48,15 @@ external Pointer<Void> sjOpen(
   Pointer<SjResult> result,
 );
 
+@Native<Pointer<Void> Function(Pointer<Uint8>, Uint64, Pointer<SjResult>)>(
+  symbol: 'sj_open_file',
+)
+external Pointer<Void> sjOpenFile(
+  Pointer<Uint8> path,
+  int pathLength,
+  Pointer<SjResult> result,
+);
+
 @Native<
   Void Function(Pointer<Void>, Pointer<Uint8>, Uint64, Pointer<SjResult>)
 >(symbol: 'sj_at')

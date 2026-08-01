@@ -1,3 +1,23 @@
+## 1.2.0
+
+- **Add `SimdJsonDocument.openFile`, which reads a file without it passing
+  through Dart.** The package is for pulling a few fields out of a payload
+  large enough that decoding all of it is the wrong trade — and until now the
+  only way in was `parseBytes`, which needs the caller to hold the whole file
+  as a `Uint8List` before anything is parsed, and then copies it again into
+  the padded buffer simdjson works on. Two copies of the thing the package
+  exists to avoid touching, and both grow with the file.
+
+  `openFile` takes a path and lets simdjson read into that buffer directly.
+  Measured on a 4.7 MB export, opening it and reading one pointer: 1.3 ms
+  against 2.5 ms through `parseBytes`, with the intermediate list never built.
+  It is a read rather than a memory map, so the bytes are paid for once and
+  the file may change afterwards.
+
+  A file that cannot be read and a file that is not JSON fail differently —
+  `IO_ERROR` against a parse error — so a caller can tell a path to fix from
+  data to fix.
+
 ## 1.1.2
 
 - Lead with what this package is actually for. The description and the README

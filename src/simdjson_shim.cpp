@@ -358,6 +358,45 @@ SJ_EXPORT void* sj_open(const uint8_t* json, uint64_t length, SjResult* result) 
   }
 }
 
+// Opens a document straight from a file, without the bytes passing through
+// the caller's heap. simdjson reads the file into the padded buffer it
+// parses, so the copy into Dart that sj_open requires never happens; that
+// copy is the whole file, and it is the caller's largest cost when only a
+// few fields are wanted. This is a read rather than a memory map.
+//
+// The path is a UTF-8 byte string; it is not null-terminated by the caller,
+// so its length is passed alongside. Returns null on error with the details
+// in `result`, including a file that does not exist or cannot be read.
+SJ_EXPORT void* sj_open_file(const uint8_t* path, uint64_t path_length,
+                             SjResult* result) {
+  result->error_code = 0;
+  result->error_message = nullptr;
+  result->tape = nullptr;
+  result->tape_length = 0;
+
+  auto* document = new (std::nothrow) SjDocument();
+  if (document == nullptr) {
+    fail_alloc(result);
+    return nullptr;
+  }
+  try {
+    const std::string_view file_path(reinterpret_cast<const char*>(path),
+                                     static_cast<size_t>(path_length));
+    const auto error = document->parser.load(file_path).get(document->root);
+    if (error) {
+      result->error_code = static_cast<int32_t>(error);
+      result->error_message = simdjson::error_message(error);
+      delete document;
+      return nullptr;
+    }
+    return document;
+  } catch (...) {
+    delete document;
+    fail_alloc(result);
+    return nullptr;
+  }
+}
+
 // Resolves a JSON Pointer (RFC 6901) inside an open document and
 // serializes just that subtree. error_code -1 means "path not found"
 // (missing field, index out of bounds, or a scalar in the middle of the

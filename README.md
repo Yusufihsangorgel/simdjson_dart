@@ -17,7 +17,9 @@ rather than the built-in.
 Three APIs:
 
 - **`SimdJsonDocument`** parses once and materializes only what you
-  read. For picking fields out of large payloads this is 5-14x faster
+  read. `SimdJsonDocument.openFile` takes a path and reads the file straight
+  into the parser, so a large export never has to be held as a `Uint8List`
+  first. For picking fields out of large payloads this is 5-14x faster
   than decoding everything.
 - **`simdJsonDecodeBytes`** is a `jsonDecode` alternative that decodes
   the whole document, moderately faster on large byte inputs.
@@ -29,6 +31,8 @@ Three APIs:
 import 'package:simdjson_dart/simdjson_dart.dart';
 
 // Selective access: parse 9 MB, materialize three values.
+// Straight from a file, with no Uint8List in between:
+//   final doc = SimdJsonDocument.openFile('export.json');
 final doc = SimdJsonDocument.parseBytes(bytes);
 try {
   final name = doc.at('/items/0/name') as String?;
