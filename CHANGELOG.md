@@ -1,3 +1,12 @@
+## 1.2.1
+
+- Ship the README section on standalone binaries, which 1.2.0 left out. It
+  documents that `dart compile exe` refuses a package with build hooks and
+  that `dart build` is the way through — the thing that stops this package's
+  own audience, people building a CLI or a server binary, from shipping. It
+  was committed alongside 1.2.0 but not in the archive that was published, and
+  pub.dev renders the README from the archive, so the page did not show it.
+
 ## 1.2.0
 
 - **Add `SimdJsonDocument.openFile`, which reads a file without it passing
