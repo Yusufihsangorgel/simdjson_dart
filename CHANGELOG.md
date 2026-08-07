@@ -1,3 +1,17 @@
+## 1.2.2
+
+- **Correct what the standalone-binaries section says about the SDK.** It
+  called the `dart compile exe` refusal a gap "tracked upstream at
+  dart-lang/sdk#62593", which sends a reader off to wait for a fix that is not
+  coming. #62593 is narrower than that: it asks for the *check* to be relaxed
+  for projects that merely depend on a build hook they never invoke. On it,
+  dcharkes writes that turning the error into a warning "will break the user
+  experience for people who should switch to `dart build cli`" — so `dart
+  build cli` is the destination, not a stopgap. None of the seven open
+  `dart-cli-build` issues proposes teaching `dart compile` to run hooks. The
+  section now says that, and still cites #62593 for what it actually covers.
+  Docs only.
+
 ## 1.2.1
 
 - Ship the README section on standalone binaries, which 1.2.0 left out. It

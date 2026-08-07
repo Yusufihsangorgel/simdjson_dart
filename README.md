@@ -209,8 +209,13 @@ dart build cli
 
 The output is a `bundle/` directory, not a lone file — the executable
 loads its library from `../lib` next to it, so ship the whole folder.
-`dart run` and `dart test` are unaffected. Tracked upstream at
-[dart-lang/sdk#62593].
+`dart run` and `dart test` are unaffected.
+
+Treat this as the intended path, not a gap waiting on a fix. `dart build
+cli` is where the SDK points a package that carries build hooks, and the
+open discussion on the `dart compile exe` side is about narrowing its
+check for projects that merely *depend* on a hook they never invoke —
+not about teaching it to run them ([dart-lang/sdk#62593]).
 
 [dart-lang/sdk#62593]: https://github.com/dart-lang/sdk/issues/62593
 
