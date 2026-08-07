@@ -1,0 +1,4 @@
+# Article and post artwork. It lives on GitHub because published writing links
+# to it by raw URL, but it is not part of the package and pub warns about the
+# plural directory name, so it stays out of the archive.
+docs/
