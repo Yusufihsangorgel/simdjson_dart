@@ -11,9 +11,9 @@
   and Linux are unchanged.
 - The bug shipped in 1.2.0 with the feature and was present in 1.2.1 and
   1.2.2. `test/open_file_test.dart` covered it from the start and the Windows
-  job had been red for seven days; nobody was reading CI. The three repositories'
-  workflows now also run on a weekly schedule, and the release checklist reads
-  the CI conclusion for the commit being published.
+  job had been red for seven days; nobody was reading CI. Every repository in
+  this portfolio now also runs its workflow on a weekly schedule, and the
+  release checklist reads the CI conclusion for the commit being published.
 
 ## 1.2.2
 
