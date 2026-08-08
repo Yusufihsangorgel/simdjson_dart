@@ -2,3 +2,18 @@
 # to it by raw URL, but it is not part of the package and pub warns about the
 # plural directory name, so it stays out of the archive.
 docs/
+
+# The rest of this file exists because a .pubignore replaces .gitignore for the
+# directory it sits in rather than adding to it. The moment the entry above was
+# added, everything the root .gitignore excludes stopped being excluded from
+# the archive, silently. Measured: with a build/ directory present, `dart pub
+# publish --dry-run` packed it.
+#
+# pub skips .dart_tool/ and dot-directories on its own, so only build/ actually
+# leaked, and only when a build had been run before publishing. Keep this list
+# a superset of .gitignore anyway; the failure is invisible until an archive
+# ships heavier than the package.
+build/
+pubspec.lock
+.dart_tool/
+.idea/
