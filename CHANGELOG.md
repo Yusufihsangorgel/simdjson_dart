@@ -1,3 +1,20 @@
+## 1.2.3
+
+- **Fix `SimdJsonDocument.openFile` on Windows for any path that is not pure
+  ASCII.** The path crosses to native as UTF-8 and simdjson's narrow `load()`
+  ends in `std::fopen`, which on Windows reads those bytes in the active ANSI
+  code page — so a file under `C:\Users\Ömer\` or any directory with a
+  non-ASCII character failed to open with `IO_ERROR` although it was there.
+  It now reads the file through `padded_string::load`, whose wide overload
+  uses `_wfopen`, and parses the bytes; `parse` borrows its buffer rather than
+  copying, so the loaded string is kept alive alongside the document. macOS
+  and Linux are unchanged.
+- The bug shipped in 1.2.0 with the feature and was present in 1.2.1 and
+  1.2.2. `test/open_file_test.dart` covered it from the start and the Windows
+  job had been red for seven days; nobody was reading CI. The three repositories'
+  workflows now also run on a weekly schedule, and the release checklist reads
+  the CI conclusion for the commit being published.
+
 ## 1.2.2
 
 - **Correct what the standalone-binaries section says about the SDK.** It
