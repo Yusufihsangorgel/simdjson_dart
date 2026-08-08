@@ -367,6 +367,50 @@ SJ_EXPORT void* sj_open(const uint8_t* json, uint64_t length, SjResult* result) 
 // The path is a UTF-8 byte string; it is not null-terminated by the caller,
 // so its length is passed alongside. Returns null on error with the details
 // in `result`, including a file that does not exist or cannot be read.
+#ifdef _WIN32
+// UTF-8 to UTF-16, so a path can be opened with _wfopen rather than going
+// through the ANSI code page. Hand-rolled rather than pulled from <windows.h>
+// to keep this translation unit free of the Windows headers, which define
+// macros that collide with simdjson.
+static std::wstring utf8_to_wide(std::string_view utf8) {
+  std::wstring wide;
+  wide.reserve(utf8.size());
+  size_t index = 0;
+  while (index < utf8.size()) {
+    const auto lead = static_cast<unsigned char>(utf8[index]);
+    uint32_t code_point;
+    size_t length;
+    if (lead < 0x80) {
+      code_point = lead;
+      length = 1;
+    } else if ((lead & 0xE0) == 0xC0) {
+      code_point = lead & 0x1Fu;
+      length = 2;
+    } else if ((lead & 0xF0) == 0xE0) {
+      code_point = lead & 0x0Fu;
+      length = 3;
+    } else {
+      code_point = lead & 0x07u;
+      length = 4;
+    }
+    if (index + length > utf8.size()) break;  // truncated; stop rather than read past
+    for (size_t offset = 1; offset < length; ++offset) {
+      code_point = (code_point << 6) |
+                   (static_cast<unsigned char>(utf8[index + offset]) & 0x3Fu);
+    }
+    index += length;
+    if (code_point >= 0x10000u) {
+      code_point -= 0x10000u;
+      wide.push_back(static_cast<wchar_t>(0xD800u + (code_point >> 10)));
+      wide.push_back(static_cast<wchar_t>(0xDC00u + (code_point & 0x3FFu)));
+    } else {
+      wide.push_back(static_cast<wchar_t>(code_point));
+    }
+  }
+  return wide;
+}
+#endif
+
 SJ_EXPORT void* sj_open_file(const uint8_t* path, uint64_t path_length,
                              SjResult* result) {
   result->error_code = 0;
@@ -382,7 +426,17 @@ SJ_EXPORT void* sj_open_file(const uint8_t* path, uint64_t path_length,
   try {
     const std::string_view file_path(reinterpret_cast<const char*>(path),
                                      static_cast<size_t>(path_length));
+#ifdef _WIN32
+    // The Dart side hands us UTF-8. simdjson's narrow load() ends in
+    // std::fopen, which on Windows interprets the bytes in the active ANSI
+    // code page, so any path with a non-ASCII character fails to open even
+    // though it exists. simdjson ships a wide overload that uses _wfopen, so
+    // widen the path first and use that.
+    const auto error =
+        document->parser.load(utf8_to_wide(file_path)).get(document->root);
+#else
     const auto error = document->parser.load(file_path).get(document->root);
+#endif
     if (error) {
       result->error_code = static_cast<int32_t>(error);
       result->error_message = simdjson::error_message(error);
