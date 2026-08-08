@@ -1,3 +1,49 @@
+## 1.2.4
+
+- **Fix an empty NDJSON input being rejected because an earlier parse failed.**
+  `simdJsonDecodeNdjson('')` and `simdJsonDecodeNdjsonBytes` on zero bytes threw
+  `FormatException: NDJSON input ends with an incomplete document` if an
+  earlier parse on the same thread had failed, although zero bytes hold zero
+  documents and nothing there can be cut short. It lands on the path a chunked
+  reader takes: parse a batch, hit a malformed line, and the final flush of an
+  empty carry buffer throws for a reason that has nothing to do with what it
+  was handed.
+- The cause is state outliving a call. One parser is kept `thread_local`, and
+  the truncation check reads bookkeeping that the indexing pass writes when it
+  finishes a batch. That pass returns early for a zero-length buffer without
+  writing any of it, so for zero bytes `truncated_bytes()` was still answering
+  for the parse before. The check now asks whether the stream holds any bytes
+  first, using `size_in_bytes()` rather than the length passed in, because
+  `parse_many` strips a leading byte-order mark and that leaves a BOM-only
+  input at zero bytes here too.
+- The bug arrived in 0.2.0 with NDJSON decoding and was in every release since,
+  through 1.2.3. It takes two calls in a row to show, which is why the
+  empty-input test that has been there all along never saw it. The regression
+  test runs three zero-byte inputs — an empty string, empty bytes, and a buffer
+  holding nothing but a byte-order mark — each after a different failing parse,
+  in one synchronous block, because the leak is between two calls on the same
+  thread.
+- **A second example, for the other job: reading a newline-delimited log.** The
+  package shipped one example, selective access into a large payload, so the
+  way to read a log too big to hold was left to the reader.
+  `example/ndjson_log_scan.dart` answers a real question about a 20,000-line
+  request log twice, once with the file resident and once reading 64 KB at a
+  time, and both passes have to agree. The chunked pass is the point: a chunk
+  boundary is not a line boundary, so a chunked reader has to keep the bytes
+  after the last newline and glue them onto the front of the next chunk.
+- CI now runs both examples. The READMEs quote their output line for line, and
+  analysis alone would let an example keep compiling while printing something
+  the docs no longer match, which is how a quoted transcript goes stale without
+  anything turning red. Writing the new example turned up exactly that: the
+  older one's quoted `TAPE_ERROR` message was shorter than what it prints.
+  Corrected, and now the run itself is the check.
+- Repair the screenshot caption on the package page, which has read "6.7 MB of
+  str ing-heavy JSON" since 0.2.2. That release hard-wrapped the description to
+  get under the 160 characters the analyser scores, and broke the line
+  mid-word; the description is a folded YAML scalar, so the break became a
+  space. It wraps between words now, and is still short enough to score, at
+  142 characters.
+
 ## 1.2.3
 
 - **Fix `SimdJsonDocument.openFile` on Windows for any path that is not pure
