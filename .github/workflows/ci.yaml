@@ -24,3 +24,9 @@ jobs:
       - run: dart format --output=none --set-exit-if-changed lib test bench example hook
       - run: dart analyze --fatal-infos
       - run: dart test
+
+      # The READMEs quote these programs' output, so run them: analysis alone
+      # would let an example keep compiling while printing something the docs
+      # no longer match.
+      - run: dart run example/simdjson_dart_example.dart
+      - run: dart run example/ndjson_log_scan.dart
