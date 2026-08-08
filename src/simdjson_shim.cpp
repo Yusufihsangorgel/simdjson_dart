@@ -439,12 +439,15 @@ SJ_EXPORT void* sj_open_file(const uint8_t* path, uint64_t path_length,
     // the file is there. The wide overload uses _wfopen and does not have
     // that problem, but it lives on padded_string rather than on parser, so
     // read the file first and parse the bytes.
-    auto loaded = simdjson::padded_string::load(utf8_to_wide(file_path));
-    auto error = loaded.error();
+    // `get(out)` rather than `.value()`: this builds without exceptions, and
+    // simdjson only defines `value()` under SIMDJSON_EXCEPTIONS. It is
+    // rvalue-qualified, so it is called straight on the temporary.
+    simdjson::padded_string bytes;
+    auto error = simdjson::padded_string::load(utf8_to_wide(file_path)).get(bytes);
     if (!error) {
       // parse() borrows the buffer instead of copying it, so it is moved into
       // the document and outlives this call.
-      document->source = std::move(loaded.value());
+      document->source = std::move(bytes);
       error = document->parser.parse(document->source).get(document->root);
     }
 #else
