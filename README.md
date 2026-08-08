@@ -74,6 +74,15 @@ complete document as something a later batch will finish, which for a
 whole-buffer parse would quietly lose the last record of a cut-off log.
 That case throws a `FormatException` here instead.
 
+That same guarantee decides how you read a log too large to hold. A chunked
+read has to hand over whole lines only: keep the bytes after the last newline,
+glue them onto the front of the next chunk, and flush that remainder at EOF. A
+chunk that stops mid-record is rejected rather than half-parsed, and whether a
+boundary lands mid-record depends on the data, so the mistake survives a
+fixture and fails on real traffic. `example/ndjson_log_scan.dart` answers the
+same question about a 20,000-line log twice, from a 2.16 MB resident buffer and
+from a 64 KB one, and prints both.
+
 ![Diagram: the lazy SimdJsonDocument.at path reads only selected fields, while simdJsonDecodeBytes does a full decode; both cross dart:ffi into native simdjson](https://raw.githubusercontent.com/Yusufihsangorgel/simdjson_dart/main/doc/architecture.png)
 
 ## Performance, honestly
