@@ -41,6 +41,37 @@ void main() {
   test('empty input decodes to an empty list', () {
     expect(simdJsonDecodeNdjson(''), isEmpty);
     expect(simdJsonDecodeNdjson('\n\n'), isEmpty);
+    expect(simdJsonDecodeNdjsonBytes(Uint8List(0)), isEmpty);
+  });
+
+  test('empty input is still empty after a parse that failed', () {
+    // One parser is reused per thread, and the truncation check reads
+    // bookkeeping that the indexing pass writes. That pass returns early for a
+    // zero-byte buffer without writing any of it, so an empty input read
+    // whatever the previous parse had left there — and a parse that failed
+    // leaves something that reads as "truncated".
+    //
+    // Three zero-byte inputs, because there are three ways to get one: an empty
+    // string, empty bytes, and a buffer holding nothing but a byte-order mark,
+    // which is stripped before parsing. The failing setups are varied too, so
+    // this does not rest on one of them being the poisoner.
+    //
+    // It all runs in one synchronous block on purpose: the leak is between two
+    // calls on the same thread.
+    expect(() => simdJsonDecodeNdjson('{"a":1}\n{"a":'), throwsFormatException);
+    expect(simdJsonDecodeNdjson(''), isEmpty);
+
+    expect(
+      () => simdJsonDecodeNdjson('{"a":1}\n{"broken":\n'),
+      throwsFormatException,
+    );
+    expect(simdJsonDecodeNdjsonBytes(Uint8List(0)), isEmpty);
+
+    expect(
+      () => simdJsonDecodeNdjson('{"a":1}\n{"a":"oops'),
+      throwsFormatException,
+    );
+    expect(simdJsonDecodeNdjson('\u{feff}'), isEmpty);
   });
 
   test('non-ASCII content round-trips', () {

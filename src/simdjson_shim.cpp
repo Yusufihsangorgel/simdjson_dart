@@ -341,7 +341,18 @@ SJ_EXPORT void sj_parse_ndjson(const uint8_t* json, uint64_t length,
     // document as "maybe completed by the next batch" and drops them. For a
     // whole-buffer parse that is silent data loss: the last line of a
     // truncated log would just disappear. Report it instead.
-    if (stream.truncated_bytes() > 0) {
+    //
+    // Only ask when the stream has bytes. truncated_bytes() is derived from
+    // bookkeeping that the indexing pass writes when it finishes a batch, and
+    // that pass returns early for a zero-length buffer without writing any of
+    // it ("we can assume that len > 0 throughout"). The parser above is
+    // thread_local and outlives the call, so for zero bytes the answer came
+    // from the previous parse on this thread: after any parse that failed, an
+    // empty input was rejected as incomplete. Zero bytes hold zero documents
+    // and nothing there can be cut short. size_in_bytes() rather than `length`
+    // because parse_many strips a leading byte-order mark, which leaves a
+    // BOM-only input at zero bytes here too.
+    if (stream.size_in_bytes() > 0 && stream.truncated_bytes() > 0) {
       static const char kTruncated[] =
           "NDJSON input ends with an incomplete document";
       result->error_code = static_cast<int32_t>(simdjson::TAPE_ERROR);
