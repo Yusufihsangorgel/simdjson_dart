@@ -7,6 +7,10 @@ powered by the [simdjson](https://simdjson.org) C++ library over FFI. The
 native code is compiled automatically at build time through Dart build hooks;
 there is nothing to install.
 
+![A terminal run of the benchmark: a 9.3 MB JSON API response, three fields
+read out of it, `jsonDecode` plus indexing taking 71 ms against
+`SimdJsonDocument.at` taking 6 ms, and the ratio printed underneath](https://raw.githubusercontent.com/Yusufihsangorgel/simdjson_dart/main/doc/demo.gif)
+
 That first sentence is the whole point. Decoding a document into Dart objects
 is work `dart:convert` already does well, and below about 100 KB it does it
 faster than this package can, FFI boundary included. What it cannot do is

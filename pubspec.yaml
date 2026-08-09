@@ -3,7 +3,7 @@ description: >-
   Read a few fields out of a large JSON payload without decoding the rest,
   backed by the simdjson C++ library over FFI. Whole-document and NDJSON
   decoding too.
-version: 1.2.4
+version: 1.2.5
 repository: https://github.com/Yusufihsangorgel/simdjson_dart
 issue_tracker: https://github.com/Yusufihsangorgel/simdjson_dart/issues
 
@@ -15,6 +15,10 @@ topics:
   - simd
 
 screenshots:
+  - description: >-
+      A 9.3 MB JSON response, three fields read out of it: jsonDecode plus
+      indexing against SimdJsonDocument.at, with the ratio printed.
+    path: doc/demo.gif
   - description: >-
       Throughput against dart:convert: reading three values out of 6.7 MB of
       string-heavy JSON is 14.8x faster, decoding every field 1.19x to 1.75x.
