@@ -18,7 +18,7 @@ Three APIs:
 
 - **`SimdJsonDocument`** parses once and materializes only what you
   read. `SimdJsonDocument.openFile` takes a path and reads the file straight
-  into the parser, so a large export never has to be held as a `Uint8List`
+  into the parser: a large export never has to be held as a `Uint8List`
   first. For picking fields out of large payloads this is 5-14x faster
   than decoding everything.
 - **`simdJsonDecodeBytes`** is a `jsonDecode` alternative that decodes
@@ -65,8 +65,8 @@ print(rows.length); // 2
 On a 2.11 MB log of 20,000 documents, measured on an Apple M-series
 machine after warmup and averaged over five runs, that is 10.4 ms
 against 17.8 ms for a `jsonDecode` per line, about 1.7x. Both
-materialize every record, so this is the same moderate margin the
-full-decode path gets, not the 5-14x that selective access gives.
+materialize every record. This is the same moderate margin the
+full-decode path gets, rather than the 5-14x that selective access gives.
 
 A truncated last document is an error, not a silent drop. simdjson's
 document stream normally treats trailing bytes that do not yet form a
@@ -101,7 +101,7 @@ same work, including reading the results (its maps materialize lazily).
 
 ### Where the lazy path starts to pay off
 
-The table above is at 6-9 MB. The FFI boundary is not free, so at small sizes
+The table above is at 6-9 MB. The FFI boundary is not free, and at small sizes
 `dart:convert` wins; `bench/crossover.dart` sweeps the range to find where
 `SimdJsonDocument.at` overtakes reading the same fields through `jsonDecode`:
 
@@ -140,8 +140,8 @@ What this means in practice:
 If you sit in front of mixed input, some of it will not be strict JSON and
 every one of those pays for a `FormatException` instead of a result. That cost
 is not constant: the bytes are encoded and copied into native memory before
-simdjson looks at them, so it scales with the document, not with the distance
-to the error. Rejecting a 4 MB document that is invalid at byte two:
+simdjson looks at them, so it scales with the document rather than with the
+distance to the error. Rejecting a 4 MB document that is invalid at byte two:
 
 | Size | `simdJsonDecode` | `simdJsonDecodeBytes` | 4 KB head scan |
 | ---- | ---------------- | --------------------- | -------------- |
@@ -150,15 +150,16 @@ to the error. Rejecting a 4 MB document that is invalid at byte two:
 | 388 KB | 1.87 ms | 178 µs | 10 µs |
 | 4 MB | 12.97 ms | 885 µs | 18 µs |
 
-Two things follow. Hand over bytes rather than a `String` if you reject often —
+Two things follow. Hand over bytes rather than a `String` if you reject often;
 most of the gap between the first two columns is the UTF-8 encode that
 `simdJsonDecode` does for you. And if you can tell from the first few kilobytes
 that a document is not strict JSON, checking is worth it above roughly 40 KB;
 below that the scan costs about what the failed parse does.
 
-The third column is a heuristic, not a parse, and it can be wrong in both
-directions — it is here because it is what a caller in front of mixed input
-reaches for. Numbers from `dart run bench/reject.dart` on an Apple M-series.
+The third column is a heuristic rather than a parse, and it can be wrong in
+both directions. It is here because it is what a caller in front of mixed
+input reaches for. Numbers from `dart run bench/reject.dart` on an Apple
+M-series.
 
 ## API notes
 
@@ -192,8 +193,8 @@ the document to `jsonDecode` when simdjson rejects it *only* for a number's
 range, so `1e999` gives `Infinity` and an integer past `uint64` gives a double,
 exactly as `dart:convert` does. The retry costs a second parse, but only for
 documents that would otherwise have thrown; nothing changes on the path where
-simdjson succeeds. `SimdJsonDocument`, the lazy reader, still throws — it hands
-back a handle rather than a decoded value, so there is nothing to fall back
+simdjson succeeds. `SimdJsonDocument`, the lazy reader, still throws: it hands
+back a handle rather than a decoded value, and there is nothing to fall back
 to.
 
 ## Platform support
@@ -216,14 +217,14 @@ dart build cli
 ./build/cli/<os>_<arch>/bundle/bin/<name>
 ```
 
-The output is a `bundle/` directory, not a lone file — the executable
-loads its library from `../lib` next to it, so ship the whole folder.
+The output is a `bundle/` directory rather than a lone file. The executable
+loads its library from `../lib` next to it; ship the whole folder.
 `dart run` and `dart test` are unaffected.
 
 Treat this as the intended path, not a gap waiting on a fix. `dart build
 cli` is where the SDK points a package that carries build hooks, and the
 open discussion on the `dart compile exe` side is about narrowing its
-check for projects that merely *depend* on a hook they never invoke —
+check for projects that merely *depend* on a hook they never invoke. It is
 not about teaching it to run them ([dart-lang/sdk#62593]).
 
 [dart-lang/sdk#62593]: https://github.com/dart-lang/sdk/issues/62593
