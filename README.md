@@ -11,6 +11,34 @@ there is nothing to install.
 read out of it, `jsonDecode` plus indexing taking 71 ms against
 `SimdJsonDocument.at` taking 6 ms, and the ratio printed underneath](https://raw.githubusercontent.com/Yusufihsangorgel/simdjson_dart/main/doc/demo.gif)
 
+## Why this instead of what you already have
+
+**Instead of `dart:convert`.** `jsonDecode` builds the entire tree before you
+can read a single field. If a 6 MB response carries three values you care
+about, you still pay to allocate every other string, list, and map in it.
+`SimdJsonDocument.parseBytes` parses once and materializes only what you ask
+for: `doc.at('/meta/total')` walks the parsed tape and hands back one Dart
+object (`lib/src/document.dart:121`).
+
+**Instead of `crimson`.** Crimson is the popular pure-Dart fast-JSON package
+and it does support RFC 6901 pointers, but they are wired up at build time.
+You annotate a class with `@json` and run `build_runner`, and its README notes
+that "JSON pointers are evaluated at compile time and optimized code is
+generated," and that "you can only use a pointer prefix once in a class"
+(README, "JSON Pointers"). That is a good trade when you know the shape ahead
+of time. It does not help when the path is a string you received at runtime,
+or when you want both `/user` and `/user/name` out of the same payload.
+
+**Reach for it when**
+
+- A large upstream payload has a few fields you need and the rest is noise.
+- The field path is data, from a config or a mapping table, not a literal in your source.
+- You read NDJSON line by line and do not want each line's full object graph.
+
+**Skip it** if your payloads are small or you need every field anyway:
+`dart:convert` has no native build step and runs on web, which this package
+does not (`pubspec.yaml` declares linux, macos, and windows only).
+
 That first sentence is the whole point. Decoding a document into Dart objects
 is work `dart:convert` already does well, and below about 100 KB it does it
 faster than this package can, FFI boundary included. What it cannot do is
