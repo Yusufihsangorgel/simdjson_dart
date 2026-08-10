@@ -1,3 +1,13 @@
+## 1.4.0
+
+- New `SimdJsonDocument.exists(pointer)`. `at` returns null both for a path
+  that is not in the document and for a path whose value is JSON null, and
+  nothing could tell those apart. `exists` can, and skips building the Dart
+  value, so it is cheaper than `at` on a hit.
+- `at`'s documentation now says that null is two answers. It previously said
+  only "returns null when the path does not exist", which reads as a promise
+  that null means absent.
+
 ## 1.3.0
 
 - The README now answers, in its first screen, why to reach for this rather

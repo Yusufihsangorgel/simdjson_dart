@@ -118,6 +118,22 @@ final class SimdJsonDocument implements Finalizable {
   /// of bounds, or a scalar in the middle of the path). Throws
   /// [StateError] when the document is closed and [FormatException] for
   /// malformed pointers.
+  ///
+  /// Null is two answers here, and this method does not tell them apart: a
+  /// path that is not in the document and a path whose value *is* JSON null
+  /// both come back as null. It is the same overload `Map` has, and it has
+  /// the same fix -- ask [exists] when the difference matters:
+  ///
+  /// ```dart
+  /// // {"nickname": null} -- the field is there and deliberately empty.
+  /// doc.at('/nickname');      // null
+  /// doc.exists('/nickname');  // true
+  /// doc.at('/missing');       // null
+  /// doc.exists('/missing');   // false
+  /// ```
+  ///
+  /// Config files and API payloads use the distinction: an absent key means
+  /// "take the default", an explicit null means "no value, do not default".
   Object? at(String jsonPointer) {
     if (_closed) {
       throw StateError('SimdJsonDocument has been closed');
@@ -138,6 +154,42 @@ final class SimdJsonDocument implements Finalizable {
       } finally {
         sjFree(r.tape);
       }
+    } finally {
+      freeBytes(pointer);
+      freeResult(result);
+    }
+  }
+
+  /// Whether [jsonPointer] resolves to anything in this document.
+  ///
+  /// True for a path whose value is JSON null; that value exists. The point
+  /// of this method is to separate it from a path that is not there, which
+  /// [at] cannot do because both are null.
+  ///
+  /// Cheaper than [at] on a hit: the pointer is resolved the same way, but
+  /// the value is never turned into a Dart object.
+  ///
+  /// Throws [StateError] when the document is closed and [FormatException]
+  /// for a malformed pointer -- the same conditions as [at], so a pointer
+  /// this accepts is one [at] will accept.
+  bool exists(String jsonPointer) {
+    if (_closed) {
+      throw StateError('SimdJsonDocument has been closed');
+    }
+    final pointerBytes = utf8.encode(jsonPointer);
+    final pointer = allocateBytes(pointerBytes.length);
+    final result = allocateResult();
+    try {
+      pointer.asTypedList(pointerBytes.length).setAll(0, pointerBytes);
+      sjAt(_handle, pointer, pointerBytes.length, result);
+      final r = result.ref;
+      if (r.errorCode == -1) return false; // Path not found.
+      if (r.errorCode != 0) {
+        throw FormatException(errorMessageOf(r), jsonPointer);
+      }
+      // The tape was allocated even though nothing here decodes it.
+      sjFree(r.tape);
+      return true;
     } finally {
       freeBytes(pointer);
       freeResult(result);

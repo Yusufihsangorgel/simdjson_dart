@@ -197,7 +197,22 @@ M-series.
 
 - `doc.at(pointer)` takes an [RFC 6901 JSON Pointer]
   (`/items/0/name`, `~0`/`~1` escapes); the empty string returns the
-  whole document. Missing paths return null.
+  whole document.
+- `doc.at(pointer)` returns null for two different facts: the path is not
+  there, or its value is JSON null. `doc.exists(pointer)` separates them, and
+  is cheaper than `at` on a hit because it never builds the Dart value.
+
+  ```dart
+  // {"nickname": null} -- the field is present and deliberately empty.
+  doc.at('/nickname');      // null
+  doc.exists('/nickname');  // true
+  doc.at('/missing');       // null
+  doc.exists('/missing');   // false
+  ```
+
+  It is the overload `Map` has, and it matters in the same places: an absent
+  key usually means "use the default", an explicit null means "no value, and
+  do not default".
 - `close()` frees the native document (roughly input-sized memory the
   GC cannot see). A finalizer covers forgotten documents, but call
   `close` for anything large.
