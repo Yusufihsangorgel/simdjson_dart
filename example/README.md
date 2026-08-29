@@ -7,6 +7,7 @@ One file per job the package does.
 | `simdjson_dart_example.dart` | Read a few fields out of a large JSON payload without turning the whole thing into Dart objects. |
 | `ndjson_log_scan.dart` | Answer a real question about a newline-delimited log (`.jsonl`, `.ndjson`), first with the file resident and then through `simdJsonDecodeNdjsonFile`. |
 | `ndjson_stream.dart` | Stream the same log in 7-byte chunks — mid-line, mid-string, mid-UTF-8 — and match a resident decode. |
+| `gharchive_report.dart` | Stream one GH Archive hour, extract nested fields that are often missing or null, print a report. Compared with `dart:convert` on the same file. |
 
 ## Selective access: `simdjson_dart_example.dart`
 
@@ -133,3 +134,48 @@ the same records as a resident pass.
 ```
 dart run example/ndjson_stream.dart
 ```
+
+## A GH Archive hour: `gharchive_report.dart`
+
+The three examples above generate their input. This one reads a public
+hourly dump from [GH Archive](https://gharchive.org/) (gzipped NDJSON,
+one GitHub event per line). The records are not one shape: PushEvent has
+no `payload.action`, most events have no `org`, and
+`payload.pull_request.base.repo.language` is often JSON null. The tool
+streams the file, pulls those fields without crashing when they are
+absent, and prints event-type counts, the busiest repos, and a
+merged/language split for pull-request-bearing records.
+
+It is a contact test against the public API, not a production scanner.
+What the API made harder than it should have is in
+`example/gharchive_friction.md`.
+
+The dump is not in git.
+
+```
+mkdir -p data
+curl -L -o data/2024-07-07-6.json.gz \
+  https://data.gharchive.org/2024-07-07-6.json.gz
+dart run example/gharchive_report.dart
+dart run example/gharchive_report.dart --decoder=convert
+```
+
+`--decoder=simdjson` (default) uses `simdJsonDecodeNdjsonStream` over
+the gzip decoder, because `simdJsonDecodeNdjsonFile` reads raw NDJSON
+and GH Archive ships `.json.gz`. `--decoder=convert` is `jsonDecode` per
+line on the same inflated stream. `--decoder=pointers` splits lines and
+calls `SimdJsonDocument.at` per record: that is the extraction the job
+wanted, and the package has no NDJSON entry that does it.
+
+On the 2024-07-07 06:00 UTC hour (48.2 MB gzip, 346 MB uncompressed,
+151,927 events), one run on macOS arm64, Dart 3.11.0:
+
+| Decoder | Wall | Peak RSS |
+|---|---|---|
+| simdjson NDJSON stream | 7.44 s | 210 MB |
+| SimdJsonDocument.at per line | 9.70 s | 206 MB |
+| dart:convert jsonDecode per line | 14.32 s | 202 MB |
+
+`dart:convert` handled the file. Resident size did not track the 346 MB
+stream on any of the three paths. The three runs printed the same
+counts.

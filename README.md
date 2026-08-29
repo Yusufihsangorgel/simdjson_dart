@@ -298,6 +298,53 @@ succeeding and the binary then failing at startup is not a reason to wait.
 
 [dart-lang/sdk#62593]: https://github.com/dart-lang/sdk/issues/62593
 
+## A real file
+
+The tests and the micro-benchmarks were written next to the API. To see
+whether the NDJSON path holds up on input nobody designed it for,
+`example/gharchive_report.dart` streams one [GH Archive] hourly dump
+(2024-07-07 06:00 UTC: 48.2 MB gzip, 346 MB uncompressed, 151,927
+events), pulls a handful of nested fields per record — including paths
+that are absent or JSON null — and prints event-type counts, the busiest
+repos, and the pull-request merged/language split.
+
+This is not a production scanner. It is a contact test. The extraction
+that was awkward to write is in `example/gharchive_friction.md`.
+
+The dataset is not in git.
+
+```
+mkdir -p data
+curl -L -o data/2024-07-07-6.json.gz \
+  https://data.gharchive.org/2024-07-07-6.json.gz
+dart run example/gharchive_report.dart
+dart run example/gharchive_report.dart --decoder=convert
+```
+
+On a macOS arm64 machine, Dart 3.11.0, one run of each decoder on the
+full hour, folding records rather than collecting them:
+
+| Decoder | Wall | Peak RSS | vs `jsonDecode` per line |
+|---|---|---|---|
+| `simdJsonDecodeNdjsonStream` + gzip | **7.44 s** | 210 MB | **1.9x** |
+| `SimdJsonDocument.at` per line | 9.70 s | 206 MB | 1.5x |
+| `dart:convert` `jsonDecode` per line | 14.32 s | 202 MB | — |
+
+`dart:convert` handled the file. It did not run out of memory. The
+package's NDJSON stream was faster on this workload; the JSON-pointer
+path (line split + `parse` + `at` + `close` per record, because NDJSON
+does not yield documents) was in between.
+
+Resident size did not track the 346 MB uncompressed stream. After 20,000
+records the simdjson process sat in a 199–207 MB band through the
+remaining 130,000; the 64k unique repos and 32k unique actors the report
+keeps account for some of that. A decoder that retained every event
+would have climbed by hundreds of megabytes. `/usr/bin/time -l` reported
+a 213 MB high-water mark for the simdjson run and 202 MB for
+`jsonDecode`.
+
+[GH Archive]: https://gharchive.org/
+
 ## Platform support
 
 Dart 3.10+ with build hooks: `dart run`, `dart test`, and `dart build`

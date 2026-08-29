@@ -17,3 +17,4 @@ build/
 pubspec.lock
 .dart_tool/
 .idea/
+data/

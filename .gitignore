@@ -2,3 +2,7 @@
 build/
 pubspec.lock
 .idea/
+
+# Public datasets used by example/gharchive_report.dart. Fetch them locally;
+# they are tens to hundreds of megabytes and are not part of the package.
+data/
