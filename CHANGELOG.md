@@ -1,3 +1,11 @@
+## 1.4.1
+
+- **Rewrite the standalone-binaries section for the error `dart compile exe`
+  actually produces.** It still described a compile-time refusal (`'dart
+  compile' does not support build hooks, use 'dart build' instead`). On
+  Dart 3.13.2 the compile succeeds and the binary fails at startup.
+  `dart build cli` remains the working path. Docs only.
+
 ## 1.4.0
 
 - New `SimdJsonDocument.exists(pointer)`. `at` returns null both for a path

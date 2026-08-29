@@ -3,7 +3,7 @@ description: >-
   Read a few fields out of a large JSON payload without decoding the rest,
   backed by the simdjson C++ library over FFI. Whole-document and NDJSON
   decoding too.
-version: 1.4.0
+version: 1.4.1
 repository: https://github.com/Yusufihsangorgel/simdjson_dart
 issue_tracker: https://github.com/Yusufihsangorgel/simdjson_dart/issues
 

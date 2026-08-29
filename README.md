@@ -244,6 +244,46 @@ simdjson succeeds. `SimdJsonDocument`, the lazy reader, still throws: it hands
 back a handle rather than a decoded value, and there is nothing to fall back
 to.
 
+## Standalone binaries
+
+`dart compile exe` does not run build hooks, so the native library never
+ships. On Dart 3.13.2 (macOS arm64) the compile succeeds (exit 0) and the
+binary then fails at startup (exit 255):
+
+```
+Invalid argument(s): Couldn't resolve native function 'sj_open' in 'package:simdjson_dart/src/bindings.dart' : No asset with id 'package:simdjson_dart/src/bindings.dart' found. No available native assets. Attempted to fallback to process lookup. dlsym(RTLD_DEFAULT, sj_open): symbol not found.
+```
+
+The same command used to stop at compile time with `'dart compile' does
+not support build hooks, use 'dart build' instead`. Use `dart build cli`,
+which runs the hook and copies the asset:
+
+```
+dart build cli --target example/simdjson_dart_example.dart
+```
+
+That reports `Copying 1 build assets: package:simdjson_dart/src/bindings.dart`
+and writes a `bundle/` directory rather than a lone file:
+
+```
+build/cli/<os>_<arch>/bundle/bin/<name>
+```
+
+On macOS arm64 that is
+`build/cli/macos_arm64/bundle/bin/simdjson_dart_example`. The executable
+loads its library from `../lib` next to it; shipping only the file out of
+`bin/` fails the same way as `dart compile exe`. Ship the whole folder.
+`dart run` and `dart test` are unaffected.
+
+Treat this as the intended path, not a gap waiting on a fix. `dart build
+cli` is where the SDK points a package that carries build hooks, and the
+open discussion on the `dart compile exe` side is about narrowing its
+check for projects that merely *depend* on a hook they never invoke. It is
+not about teaching it to run them ([dart-lang/sdk#62593]), so the compile
+succeeding and the binary then failing at startup is not a reason to wait.
+
+[dart-lang/sdk#62593]: https://github.com/dart-lang/sdk/issues/62593
+
 ## Platform support
 
 Dart 3.10+ with build hooks: `dart run`, `dart test`, and `dart build`
@@ -251,30 +291,6 @@ compile the C++ automatically (a C++17 toolchain must be present:
 Xcode CLT, gcc/clang, or MSVC). Developed and verified on macOS arm64;
 CI covers Linux, macOS, and Windows. Flutter support arrives when
 build hooks land in stable Flutter.
-
-### Standalone binaries
-
-`dart compile exe` does not run build hooks, so it refuses a package that
-needs them and stops with `'dart compile' does not support build hooks,
-use 'dart build' instead`. Use `dart build` (in preview), which runs the
-hooks and writes the native library beside the executable:
-
-```
-dart build cli
-./build/cli/<os>_<arch>/bundle/bin/<name>
-```
-
-The output is a `bundle/` directory rather than a lone file. The executable
-loads its library from `../lib` next to it; ship the whole folder.
-`dart run` and `dart test` are unaffected.
-
-Treat this as the intended path, not a gap waiting on a fix. `dart build
-cli` is where the SDK points a package that carries build hooks, and the
-open discussion on the `dart compile exe` side is about narrowing its
-check for projects that merely *depend* on a hook they never invoke. It is
-not about teaching it to run them ([dart-lang/sdk#62593]).
-
-[dart-lang/sdk#62593]: https://github.com/dart-lang/sdk/issues/62593
 
 ## Credits and licenses
 
