@@ -46,7 +46,7 @@ skip: pull three fields out of a 9 MB response and leave the other 9 MB as
 bytes. That is where the 5-14x lives, and it is the reason to reach for this
 rather than the built-in.
 
-Three APIs:
+Four APIs:
 
 - **`SimdJsonDocument`** parses once and materializes only what you
   read. `SimdJsonDocument.openFile` takes a path and reads the file straight
@@ -57,7 +57,10 @@ Three APIs:
   the whole document, moderately faster on large byte inputs.
 - **`simdJsonDecodeNdjson`** decodes newline-delimited JSON (`.ndjson`,
   `.jsonl`, log streams) in a single native pass instead of one
-  `jsonDecode` per line.
+  `jsonDecode` per line. The payload has to be resident.
+- **`simdJsonDecodeNdjsonStream` / `simdJsonDecodeNdjsonFile`** decode
+  the same format without holding the file. A `Stream` of decoded values;
+  the file entry takes a path the way `openFile` does.
 
 ```dart
 import 'package:simdjson_dart/simdjson_dart.dart';
@@ -79,6 +82,13 @@ final data = simdJsonDecodeBytes(bytes) as Map<String, dynamic>;
 
 // Newline-delimited JSON: one value per line, one native pass.
 final rows = simdJsonDecodeNdjsonBytes(logBytes);
+
+// A log that does not fit: one decoded value at a time, no Uint8List of
+// the file. Fold each record; toList() spends the memory this avoids.
+await for (final row in simdJsonDecodeNdjsonFile('requests.jsonl')) {
+  final record = row as Map<String, Object?>;
+  if (record['level'] == 'error') print(record['msg']);
+}
 ```
 
 ## Newline-delimited JSON
@@ -106,14 +116,18 @@ complete document as something a later batch will finish, which for a
 whole-buffer parse would quietly lose the last record of a cut-off log.
 That case throws a `FormatException` here instead.
 
-That same guarantee decides how you read a log too large to hold. A chunked
-read has to hand over whole lines only: keep the bytes after the last newline,
-glue them onto the front of the next chunk, and flush that remainder at EOF. A
-chunk that stops mid-record is rejected rather than half-parsed, and whether a
-boundary lands mid-record depends on the data, so the mistake survives a
-fixture and fails on real traffic. `example/ndjson_log_scan.dart` answers the
-same question about a 20,000-line log twice, from a 2.16 MB resident buffer and
-from a 64 KB one, and prints both.
+That same guarantee is why `simdJsonDecodeNdjsonBytes` cannot be handed a
+chunk that stops mid-record. `simdJsonDecodeNdjsonStream` does the carry:
+unfinished bytes ride to the next chunk, including a split inside a string
+or in the middle of a UTF-8 character, and a truncated final document still
+throws. `simdJsonDecodeNdjsonFile` takes a path the way
+`SimdJsonDocument.openFile` does and never builds a `Uint8List` of the
+contents. Memory tracks the chunks you supply and the longest line, not the
+file; collecting the stream with `toList()` builds the same list the
+whole-buffer path returns. `example/ndjson_stream.dart` feeds the same log
+as 7-byte chunks — small enough that almost every boundary is mid-line —
+and checks the answer against a resident decode. `example/ndjson_log_scan.dart`
+answers a real question about a 20,000-line log both ways.
 
 ![Diagram: the lazy SimdJsonDocument.at path reads only selected fields, while simdJsonDecodeBytes does a full decode; both cross dart:ffi into native simdjson](https://raw.githubusercontent.com/Yusufihsangorgel/simdjson_dart/main/doc/architecture.png)
 
@@ -235,14 +249,14 @@ rejected with `FormatException` here:
 - Nesting deeper than 1024 levels, and documents over 4 GB.
 
 Numbers outside the range simdjson represents used to be on that list. They are
-not any more: `simdJsonDecode`, `simdJsonDecodeBytes` and the NDJSON pair hand
-the document to `jsonDecode` when simdjson rejects it *only* for a number's
-range, so `1e999` gives `Infinity` and an integer past `uint64` gives a double,
-exactly as `dart:convert` does. The retry costs a second parse, but only for
-documents that would otherwise have thrown; nothing changes on the path where
-simdjson succeeds. `SimdJsonDocument`, the lazy reader, still throws: it hands
-back a handle rather than a decoded value, and there is nothing to fall back
-to.
+not any more: `simdJsonDecode`, `simdJsonDecodeBytes` and the NDJSON entry
+points (whole-buffer and streaming) hand the document to `jsonDecode` when
+simdjson rejects it *only* for a number's range, so `1e999` gives `Infinity`
+and an integer past `uint64` gives a double, exactly as `dart:convert` does.
+The retry costs a second parse, but only for documents that would otherwise
+have thrown; nothing changes on the path where simdjson succeeds.
+`SimdJsonDocument`, the lazy reader, still throws: it hands back a handle
+rather than a decoded value, and there is nothing to fall back to.
 
 ## Standalone binaries
 

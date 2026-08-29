@@ -4,6 +4,8 @@ Read selected RFC 6901 pointers out of a large JSON payload without
 materializing the rest, using simdjson over FFI. Full-document and NDJSON
 decodes (`simdJsonDecode`, `simdJsonDecodeBytes`, `simdJsonDecodeNdjson`,
 `simdJsonDecodeNdjsonBytes`) return the same shapes as `jsonDecode`.
+Streaming NDJSON (`simdJsonDecodeNdjsonStream`, `simdJsonDecodeNdjsonFile`)
+yields one value per document without holding the file.
 
 Does not encode. Does not run on web, Android, iOS, or Flutter:
 `pubspec.yaml` declares linux, macos, and windows; `hook/build.dart`
@@ -34,6 +36,8 @@ final decoded = simdJsonDecodeBytes(bytes) as Map<String, Object?>;
 
 NDJSON (`example/ndjson_log_scan.dart`):
 `final rows = simdJsonDecodeNdjsonBytes(bytes);`
+Streaming (`example/ndjson_stream.dart`):
+`await for (final row in simdJsonDecodeNdjsonFile(path)) { ... }`
 
 Also: `SimdJsonDocument.parse(String)`, `SimdJsonDocument.openFile(path)`
 (native file read, no `Uint8List` of the contents). Pointers are RFC 6901
@@ -61,6 +65,14 @@ Also: `SimdJsonDocument.parse(String)`, `SimdJsonDocument.openFile(path)`
   failures they retry with `jsonDecode`; other errors still throw. NDJSON
   skips blank lines; empty input is `[]`; a truncated last document throws.
   Pass only complete lines (carry a mid-line tail, flush it at EOF).
+- **`simdJsonDecodeNdjsonStream` / `simdJsonDecodeNdjsonFile`**. No close.
+  A `Stream<Object?>` of the same shapes. The stream API carries the
+  unfinished line across chunks; the file API takes a path like
+  `openFile` and reads in 64 KiB chunks by default. Empty input yields
+  nothing. A truncated last document still throws. Records from earlier
+  chunks have already been yielded if a later line is malformed.
+  `toList()` undoes the memory bound. A missing file is `FormatException`
+  with `IO_ERROR`.
 - Shapes match `jsonDecode`. Maps and lists are growable. `uint64` above
   `int64` is a `double`. Safe from multiple isolates (per-thread parser).
 
@@ -77,7 +89,9 @@ Also: `SimdJsonDocument.parse(String)`, `SimdJsonDocument.openFile(path)`
   Cast `as String?`. If JSON null vs absent matters, call `exists` first.
 - **NDJSON buffer that ends mid-record.**
   `FormatException: NDJSON input ends with an incomplete document`.
-  Split on `0x0A`, keep the remainder; see `example/ndjson_log_scan.dart`.
+  The whole-buffer APIs need complete lines. Use
+  `simdJsonDecodeNdjsonStream` / `simdJsonDecodeNdjsonFile`, which carry
+  the tail; see `example/ndjson_stream.dart`.
 - **`SimdJsonDocument.parse` on an integer past uint64.**
   `FormatException: NUMBER_ERROR: Problem while parsing a number`.
   Use `simdJsonDecode` / `simdJsonDecodeBytes` (they fall back to
@@ -97,6 +111,7 @@ Also: `SimdJsonDocument.parse(String)`, `SimdJsonDocument.openFile(path)`
 lib/simdjson_dart.dart   public exports only
 lib/src/document.dart    SimdJsonDocument
 lib/src/decoder.dart     simdJsonDecode*
+lib/src/ndjson_stream.dart  simdJsonDecodeNdjsonStream / File
 lib/src/bindings.dart    @Native FFI (not exported)
 src/simdjson_shim.cpp    C ABI
 src/third_party/simdjson vendored amalgamation
@@ -112,6 +127,7 @@ toolchain must be present (Xcode CLT, gcc/clang, or MSVC). SDK `^3.10.0`.
 dart test
 dart run example/simdjson_dart_example.dart
 dart run example/ndjson_log_scan.dart
+dart run example/ndjson_stream.dart
 ```
 
 FFI symbols in `lib/src/bindings.dart` must match the `SJ_EXPORT`

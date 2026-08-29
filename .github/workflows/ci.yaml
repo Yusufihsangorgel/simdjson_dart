@@ -30,3 +30,4 @@ jobs:
       # no longer match.
       - run: dart run example/simdjson_dart_example.dart
       - run: dart run example/ndjson_log_scan.dart
+      - run: dart run example/ndjson_stream.dart

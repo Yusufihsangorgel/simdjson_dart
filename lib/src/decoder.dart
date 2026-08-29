@@ -52,6 +52,9 @@ Object? simdJsonDecodeBytes(Uint8List json) {
 /// in a single native pass, which is where this beats decoding each line
 /// separately with `dart:convert`.
 ///
+/// The payload has to be resident. For a log or dump that does not fit,
+/// use `simdJsonDecodeNdjsonStream` or `simdJsonDecodeNdjsonFile`.
+///
 /// ```dart
 /// final rows = simdJsonDecodeNdjson('{"a":1}\n{"a":2}\n');
 /// print(rows.length); // 2

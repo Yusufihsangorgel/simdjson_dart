@@ -5,8 +5,9 @@
 // `jsonDecode` per line; `simdJsonDecodeNdjsonBytes` hands the whole buffer to
 // simdjson once instead. This example answers a real question about such a log
 // (how many requests failed, and which endpoint was slowest) two ways: with
-// the file resident in memory, and in bounded memory for a file too big for
-// that. The second way has one trap in it, and that trap is most of the point.
+// the file resident in memory, and with `simdJsonDecodeNdjsonFile`, which
+// reads in chunks and yields one record at a time. The whole-buffer path has
+// one trap in it, and that trap is most of the point.
 //
 // Run: dart run example/ndjson_log_scan.dart
 import 'dart:convert';
@@ -24,7 +25,7 @@ import 'package:simdjson_dart/simdjson_dart.dart';
 /// log below carries non-ASCII paths on purpose, so the run exercises that.
 const _newline = 0x0A;
 
-void main() {
+void main() async {
   // Directory.systemTemp, not the repo: an example that writes into the
   // project it ships with is an example that dirties someone's checkout.
   final workspace = Directory.systemTemp.createTempSync('simdjson_ndjson_');
@@ -53,36 +54,34 @@ void main() {
     // ---------------------------------------------------------------------
     // Way 2: bounded memory. Reach for this when the log is bigger than you
     // are willing to hold: a day of production traffic rather than 20,000
-    // lines. The answer must come out identical; if it does not, the chunking
+    // lines. The file is read in chunks; a partial line rides to the next
+    // one. The answer must come out identical; if it does not, the stream
     // is wrong.
-    const chunkSize = 64 * 1024;
     final streamed = _LogStats();
-    final peak = _scanInChunks(log.path, chunkSize, streamed.addBatch);
+    await for (final row in simdJsonDecodeNdjsonFile(log.path)) {
+      streamed.add(row);
+    }
     final sameAnswer =
         streamed.rows == resident.rows &&
         streamed.errors == resident.errors &&
         streamed.anonymous == resident.anonymous &&
         streamed.slowestMs == resident.slowestMs &&
         streamed.slowestPath == resident.slowestPath;
-    print('chunked:  $streamed');
-    print(
-      '          peak buffer ${_size(peak)} — one chunk plus a partial line, '
-      '${(bytes.length / peak).toStringAsFixed(0)}x less than the file',
-    );
+    print('streamed: $streamed');
     print('          same answer as the resident pass: $sameAnswer');
     print('');
 
     // ---------------------------------------------------------------------
-    // The trap. Hand the decoder a chunk that stops mid-line and it rejects
-    // the entire batch rather than the one broken record.
+    // The trap, on the whole-buffer path. Hand simdJsonDecodeNdjsonBytes a
+    // chunk that stops mid-line and it rejects the entire batch rather than
+    // the one broken record. simdJsonDecodeNdjsonFile does the carry for
+    // you; this is what you hit if you split the bytes yourself and forget.
     //
     // That is deliberate on the package's side. simdjson's document stream
     // normally treats a trailing fragment as something a later batch will
     // finish, which for a whole-buffer parse means the last record of a
     // cut-off log disappears without a word. An exception you have to handle
-    // beats a count that is quietly short, so this throws instead, and that
-    // is why the loop above carries the fragment forward rather than handing
-    // it over.
+    // beats a count that is quietly short, so this throws instead.
     //
     // The reason this trap bites in production and not in testing: whether a
     // chunk boundary lands mid-line depends on the data, so a 64 KB chunk
@@ -96,10 +95,9 @@ void main() {
       print('trap: a mid-line chunk throws — ${e.message}');
     }
 
-    // The same guarantee is what makes the end of the loop matter. Dropping
-    // the leftover fragment at EOF instead of flushing it would turn a
-    // truncated log into a quietly short answer, which is the failure the
-    // exception above exists to prevent.
+    // The same guarantee is what makes a truncated file an error rather than
+    // a quietly short answer, which is the failure the exception exists to
+    // prevent.
     try {
       simdJsonDecodeNdjsonBytes(_truncate(bytes));
       print('trap: decoded a truncated log — it should have thrown');
@@ -111,62 +109,6 @@ void main() {
   }
 }
 
-/// Folds every whole line of the file at [path] into [onBatch], holding no
-/// more than [chunkSize] bytes plus one partial line at a time.
-///
-/// Returns the largest buffer it had to hold, which is the bound the caller
-/// actually bought. Note what that bound is made of: a single line longer
-/// than [chunkSize] still has to fit, because a fragment cannot be decoded.
-int _scanInChunks(
-  String path,
-  int chunkSize,
-  void Function(List<Object?> batch) onBatch,
-) {
-  final handle = File(path).openSync();
-  var carry = Uint8List(0);
-  var peak = 0;
-  try {
-    while (true) {
-      final chunk = handle.readSync(chunkSize);
-      if (chunk.isEmpty) break; // EOF.
-
-      // A chunk boundary is a byte offset, not a line boundary, so glue last
-      // round's leftover fragment onto the front of this one.
-      final buffer = carry.isEmpty ? chunk : _join(carry, chunk);
-      peak = max(peak, buffer.length);
-
-      final lastNewline = _lastNewlineIn(buffer);
-      if (lastNewline < 0) {
-        // Not one complete line yet: this record is longer than a chunk.
-        // Keep reading rather than handing over something unparseable.
-        carry = buffer;
-        continue;
-      }
-
-      // Copy the tail instead of keeping a view of `buffer`. A view would
-      // pin the entire chunk alive to hold a few dozen bytes, which is the
-      // opposite of why we are reading in chunks.
-      carry = Uint8List.fromList(
-        Uint8List.sublistView(buffer, lastNewline + 1),
-      );
-      onBatch(
-        simdJsonDecodeNdjsonBytes(
-          Uint8List.sublistView(buffer, 0, lastNewline + 1),
-        ),
-      );
-    }
-
-    // Flush. A log that does not end in a newline still has a real record
-    // sitting here, and dropping it is exactly the silent data loss this
-    // whole dance is about. If the file was cut off mid-document instead,
-    // this is where it throws, which is the outcome you want.
-    if (carry.isNotEmpty) onBatch(simdJsonDecodeNdjsonBytes(carry));
-  } finally {
-    handle.closeSync();
-  }
-  return peak;
-}
-
 /// What the caller actually wanted out of the log.
 class _LogStats {
   int rows = 0;
@@ -175,25 +117,29 @@ class _LogStats {
   double slowestMs = -1;
   String slowestPath = '';
 
-  /// Folds one batch and lets it go.
+  /// Folds one record and lets it go.
   ///
-  /// The batches are deliberately not collected. Keeping every decoded row
+  /// Records are deliberately not collected. Keeping every decoded row
   /// would move the memory from bytes into Dart objects and give back
-  /// everything the chunked read bought. Objects cost more than the bytes
+  /// everything the streamed read bought. Objects cost more than the bytes
   /// they came from, not less.
+  void add(Object? row) {
+    final record = row as Map<String, dynamic>;
+    rows++;
+    if (record['level'] == 'error') errors++;
+    // An absent field reads as null, the same as `jsonDecode` gives;
+    // unauthenticated requests carry no `user` key at all.
+    if (record['user'] == null) anonymous++;
+    final latency = (record['latency_ms'] as num).toDouble();
+    if (latency > slowestMs) {
+      slowestMs = latency;
+      slowestPath = record['path'] as String;
+    }
+  }
+
   void addBatch(List<Object?> batch) {
     for (final row in batch) {
-      final record = row as Map<String, dynamic>;
-      rows++;
-      if (record['level'] == 'error') errors++;
-      // An absent field reads as null, the same as `jsonDecode` gives;
-      // unauthenticated requests carry no `user` key at all.
-      if (record['user'] == null) anonymous++;
-      final latency = (record['latency_ms'] as num).toDouble();
-      if (latency > slowestMs) {
-        slowestMs = latency;
-        slowestPath = record['path'] as String;
-      }
+      add(row);
     }
   }
 
@@ -275,11 +221,6 @@ int _lastNewlineIn(Uint8List bytes) {
   }
   return -1;
 }
-
-Uint8List _join(Uint8List head, Uint8List tail) =>
-    Uint8List(head.length + tail.length)
-      ..setRange(0, head.length, head)
-      ..setRange(head.length, head.length + tail.length, tail);
 
 String _size(int bytes) => bytes < 1024 * 1024
     ? '${(bytes / 1024).toStringAsFixed(1)} KB'

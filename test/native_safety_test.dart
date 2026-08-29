@@ -87,6 +87,62 @@ void main() {
       }, testOn: '!windows');
     }
 
+    // Streaming NDJSON must not grow RSS with the file the way the
+    // whole-buffer path does. Same child-process reason as the probes
+    // above; this is sequential with them so two `dart run` hook builds
+    // do not compete for RAM. Lines are fat and few: the input grows,
+    // the live Dart graph does not.
+    test(
+      'ndjson stream RSS does not track the payload; whole-buffer RSS does',
+      () {
+        final result = Process.runSync(Platform.resolvedExecutable, [
+          'run',
+          'test/ndjson_stream_probe.dart',
+        ]);
+        expect(result.exitCode, 0, reason: 'probe failed: ${result.stderr}');
+        final stdout = result.stdout as String;
+        int require(String key) {
+          final match = RegExp('$key=(-?[0-9.]+)').firstMatch(stdout);
+          expect(match, isNotNull, reason: 'probe printed no $key: $stdout');
+          return double.parse(match!.group(1)!).round();
+        }
+
+        final streamSmallPeak = require('STREAM_SMALL_PEAK_RSS');
+        final streamLargePeak = require('STREAM_LARGE_PEAK_RSS');
+        final wholeLargePeak = require('WHOLE_LARGE_PEAK_RSS');
+        final largeBytes = require('WHOLE_LARGE_FILE_BYTES');
+        final smallCount = require('STREAM_SMALL_COUNT');
+        final largeCount = require('STREAM_LARGE_COUNT');
+        final wholeCount = require('WHOLE_LARGE_COUNT');
+
+        expect(smallCount, 4000);
+        expect(largeCount, 20000);
+        expect(wholeCount, 20000);
+
+        final streamGrowth = streamLargePeak - streamSmallPeak;
+        final wholeExtra = wholeLargePeak - streamLargePeak;
+        expect(
+          streamGrowth,
+          lessThan(wholeExtra),
+          reason:
+              'streaming RSS grew ${streamGrowth}B from the small payload to '
+              'the large one, which is not less than the ${wholeExtra}B the '
+              'whole-buffer path added on the large payload. stream small='
+              '${streamSmallPeak}B large=${streamLargePeak}B whole='
+              '${wholeLargePeak}B file=${largeBytes}B',
+        );
+        expect(
+          wholeExtra,
+          greaterThan(largeBytes / 2),
+          reason:
+              'whole-buffer RSS was only ${wholeExtra}B above streaming on a '
+              '${largeBytes}B payload; the resident path should pay for the '
+              'bytes. stream=${streamLargePeak}B whole=${wholeLargePeak}B',
+        );
+      },
+      testOn: '!windows',
+    );
+
     // There is deliberately no test here for the NativeFinalizer reclaiming a
     // document nobody closed. There was one, and it asserted on resident set
     // size after a fixed amount of work — which is a bet on when the garbage

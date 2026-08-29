@@ -1,3 +1,34 @@
+## 1.5.0
+
+- **Stream NDJSON without holding the file.** `simdJsonDecodeNdjsonBytes`
+  still needs the whole payload as bytes, which is the thing the format
+  exists to avoid: a log, an export, a dump. `simdJsonDecodeNdjsonStream`
+  reads whatever chunks it is given, keeps the bytes after the last
+  newline, and yields one decoded value per document.
+  `simdJsonDecodeNdjsonFile` takes a path the way `SimdJsonDocument.openFile`
+  does and never builds a `Uint8List` of the contents.
+
+  A chunk that ends mid-line, mid-string, or in the middle of a UTF-8
+  character is not an error — the unfinished bytes ride to the next chunk.
+  A truncated final document is still a `FormatException`, the same
+  message the whole-buffer path uses. Blank lines are skipped,
+  number-range failures still fall back to `jsonDecode`, and the shapes
+  are still `jsonDecode`'s.
+
+  Documents from earlier chunks have already been yielded if a later line
+  is malformed; the whole-buffer APIs stay all-or-nothing. Collecting the
+  stream with `toList()` builds the same list those APIs return, and
+  spends the memory this exists to avoid.
+
+  Memory is bounded by the chunks you supply and the longest line, not the
+  file. A child-process probe (`test/ndjson_stream_probe.dart`) streams
+  files of different sizes while folding each record and dropping it, and
+  compares process RSS against the whole-buffer path on the same file.
+  The stream's high-water mark does not track the file size; the
+  whole-buffer path's does. RSS is a process-wide number (VM, JIT, native
+  parser capacity) rather than a heap accounting of the decoder, so this
+  file does not quote a kilobyte figure for it.
+
 ## 1.4.1
 
 - **Rewrite the standalone-binaries section for the error `dart compile exe`
