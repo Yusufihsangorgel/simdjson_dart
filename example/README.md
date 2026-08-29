@@ -158,17 +158,25 @@ curl -L -o data/2024-07-07-6.json.gz \
   https://data.gharchive.org/2024-07-07-6.json.gz
 dart run example/gharchive_report.dart
 dart run example/gharchive_report.dart --decoder=convert
+dart run example/gharchive_report.dart --decoder=pointers
 ```
 
 `--decoder=simdjson` (default) uses `simdJsonDecodeNdjsonStream` over
 the gzip decoder, because `simdJsonDecodeNdjsonFile` reads raw NDJSON
 and GH Archive ships `.json.gz`. `--decoder=convert` is `jsonDecode` per
-line on the same inflated stream. `--decoder=pointers` splits lines and
-calls `SimdJsonDocument.at` per record: that is the extraction the job
-wanted, and the package has no NDJSON entry that does it.
+line on the same inflated stream. For gzip, `--decoder=pointers` passes that
+same inflated byte stream to `simdJsonSelectNdjsonStream`; raw NDJSON takes the
+path-shaped `simdJsonSelectNdjsonFile` entry. The value list contains only the
+scalars the report reads. `existencePointers` asks about `/org`,
+`/payload/action`, `/payload/pull_request`,
+`/payload/pull_request/merged`, and
+`/payload/pull_request/base/repo/language` at their exact paths without
+materializing an org or pull-request subtree.
 
-On the 2024-07-07 06:00 UTC hour (48.2 MB gzip, 346 MB uncompressed,
-151,927 events), one run on macOS arm64, Dart 3.11.0:
+The original contact run used a hand-built pointer path: split strings,
+`SimdJsonDocument.parse`, repeated `at` / `exists`, then `close`. On the
+2024-07-07 06:00 UTC hour (48.2 MB gzip, 346 MB uncompressed, 151,927
+events), one run on macOS arm64, Dart 3.11.0 measured:
 
 | Decoder | Wall | Peak RSS |
 |---|---|---|
@@ -177,5 +185,7 @@ On the 2024-07-07 06:00 UTC hour (48.2 MB gzip, 346 MB uncompressed,
 | dart:convert jsonDecode per line | 14.32 s | 202 MB |
 
 `dart:convert` handled the file. Resident size did not track the 346 MB
-stream on any of the three paths. The three runs printed the same
-counts.
+stream on any of the three paths. The three runs printed the same counts.
+Those pointer numbers describe the pre-1.6.0 workaround, not either selective
+API; the current `--decoder=pointers` branch is the replacement prompted by
+that run.

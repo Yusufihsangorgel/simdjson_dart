@@ -3,8 +3,10 @@
 /// [simdJsonDecode] is a drop-in alternative to `jsonDecode`; use
 /// [simdJsonDecodeBytes] when the input is already UTF-8 bytes,
 /// [simdJsonDecodeNdjsonStream] / [simdJsonDecodeNdjsonFile] for NDJSON
-/// that does not fit in memory, and [SimdJsonDocument] to read selected
-/// fields out of large documents without materializing the rest.
+/// that does not fit in memory, [simdJsonSelectNdjsonStream] /
+/// [simdJsonSelectNdjsonFile] to select fields from each NDJSON record, and
+/// [SimdJsonDocument] to read selected fields out of large documents without
+/// materializing the rest.
 library;
 
 export 'src/decoder.dart'
@@ -15,4 +17,8 @@ export 'src/decoder.dart'
         simdJsonDecodeNdjsonBytes;
 export 'src/document.dart' show SimdJsonDocument;
 export 'src/ndjson_stream.dart'
-    show simdJsonDecodeNdjsonFile, simdJsonDecodeNdjsonStream;
+    show
+        simdJsonDecodeNdjsonFile,
+        simdJsonDecodeNdjsonStream,
+        simdJsonSelectNdjsonFile,
+        simdJsonSelectNdjsonStream;

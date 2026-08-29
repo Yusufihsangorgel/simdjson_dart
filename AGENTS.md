@@ -7,7 +7,9 @@ decodes (`simdJsonDecode`, `simdJsonDecodeBytes`, `simdJsonDecodeNdjson`,
 Streaming NDJSON (`simdJsonDecodeNdjsonStream`, `simdJsonDecodeNdjsonFile`)
 yields one value per document without holding the whole input. The stream
 entry accepts `Stream<List<int>>`; the file entry reads 64 KiB chunks by
-default.
+default. Selective batching is `SimdJsonDocument.atMany`; selective NDJSON is
+`simdJsonSelectNdjsonStream` / `simdJsonSelectNdjsonFile`. Their optional
+`existencePointers` check exact paths without materializing those subtrees.
 
 Does not encode. Does not run on web, Android, or iOS: `pubspec.yaml`
 declares linux, macos, and windows, and `hook/build.dart` compiles the host
@@ -30,9 +32,13 @@ import 'package:simdjson_dart/simdjson_dart.dart';
 
 final doc = SimdJsonDocument.parseBytes(bytes);
 try {
-  print('total:      ${doc.at('/meta/total')}'); // 50000
-  print('first name: ${doc.at('/items/0/name')}'); // item-0
-  print('missing:    ${doc.at('/meta/cursor')}'); // null
+  final selected = doc.atMany(
+    ['/meta/total', '/items/0/name'],
+    existencePointers: ['/meta/cursor'],
+  );
+  print('total:      ${selected['/meta/total']}'); // 50000
+  print('first name: ${selected['/items/0/name']}'); // item-0
+  print('has cursor: ${selected.containsKey('/meta/cursor')}'); // false
 } finally {
   doc.close();
 }
@@ -44,6 +50,18 @@ NDJSON (`example/ndjson_log_scan.dart`):
 `final rows = simdJsonDecodeNdjsonBytes(bytes);`
 Streaming (`example/ndjson_stream.dart`):
 `await for (final row in simdJsonDecodeNdjsonFile(path)) { print(row); }`
+Selective file streaming:
+
+```dart
+await for (final selected in simdJsonSelectNdjsonFile(
+  path,
+  ['/repo/name'],
+  existencePointers: ['/org'],
+)) {
+  print(selected['/repo/name']);
+  print(selected.containsKey('/org'));
+}
+```
 
 Also: `SimdJsonDocument.parse(String)`, `SimdJsonDocument.openFile(path)`
 (native file read, no `Uint8List` of the contents). Pointers are RFC 6901
@@ -61,6 +79,12 @@ Also: `SimdJsonDocument.parse(String)`, `SimdJsonDocument.openFile(path)`
   A malformed pointer is `FormatException`, not null. `at` materializes the
   whole subtree — `at('')` or `at('/items')` on a large array is a full
   decode of that node.
+- **`SimdJsonDocument.atMany`**. Resolves value pointers and optional
+  `existencePointers` in one native batch. Value pointers materialize their
+  values; existence-only hits are true without materializing the subtree.
+  Missing paths are omitted. A pointer in both collections keeps its value,
+  including JSON null. After `close` it throws `StateError`; a malformed
+  pointer throws `FormatException`.
 - **`SimdJsonDocument.parse` / `parseBytes` / `openFile`**. Invalid JSON
   is `FormatException` with simdjson's message. `openFile` on a missing
   path: `FormatException: IO_ERROR: Error reading the file.` A malformed
@@ -83,6 +107,13 @@ Also: `SimdJsonDocument.parse(String)`, `SimdJsonDocument.openFile(path)`
   a missing-file `FormatException` with `IO_ERROR` arrives while the stream
   is consumed, so put `await for` or `await stream.toList()` inside the
   `try` block.
+- **`simdJsonSelectNdjsonStream` / `simdJsonSelectNdjsonFile`**. The same
+  bounded byte carry/file reading, but each row is a pointer-keyed
+  `Map<String, Object?>`. Both accept value pointers plus optional
+  `existencePointers`; the file entry reads raw NDJSON and has the same lazy
+  `IO_ERROR` and positive `chunkSize` contract as the full-decode file entry.
+  No close. These selective APIs do not retry number-range failures through a
+  full `jsonDecode`.
 - Shapes match `jsonDecode`. Maps and lists are growable. `uint64` above
   `int64` is a `double`. Safe from multiple isolates (per-thread parser).
 
@@ -127,7 +158,7 @@ Also: `SimdJsonDocument.parse(String)`, `SimdJsonDocument.openFile(path)`
 lib/simdjson_dart.dart   public exports only
 lib/src/document.dart    SimdJsonDocument
 lib/src/decoder.dart     simdJsonDecode*
-lib/src/ndjson_stream.dart  simdJsonDecodeNdjsonStream / File
+lib/src/ndjson_stream.dart  full-decode/selective NDJSON stream + file
 lib/src/bindings.dart    @Native FFI (not exported)
 src/simdjson_shim.cpp    C ABI
 src/third_party/simdjson vendored amalgamation

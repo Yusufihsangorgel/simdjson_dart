@@ -524,6 +524,119 @@ SJ_EXPORT void sj_at(void* handle, const uint8_t* pointer, uint64_t pointer_leng
   }
 }
 
+// Reads a little-endian u64 without assuming alignment. The Dart caller uses
+// this for both offsets and lengths so JSON pointers may contain NUL bytes.
+static uint64_t read_u64_le(const uint8_t* bytes) {
+  uint64_t value = 0;
+  for (uint32_t i = 0; i < 8; ++i) {
+    value |= static_cast<uint64_t>(bytes[i]) << (i * 8);
+  }
+  return value;
+}
+
+static void fail_pointer_batch(SjResult* result) {
+  static const char kInvalidBatch[] =
+      "Invalid encoded JSON pointer batch";
+  result->error_code = static_cast<int32_t>(simdjson::TAPE_ERROR);
+  result->error_message = kInvalidBatch;
+}
+
+// Resolves a batch of distinct JSON pointers and serializes one object whose
+// keys are the original pointers. Missing pointers are omitted. Materialize
+// mode writes the resolved value; existence mode writes true without walking
+// and serializing the subtree.
+//
+// Input layout (little-endian): u64 count, then count entries of
+// (u64 absolute_offset, u64 byte_length, u64 mode), followed by the UTF-8
+// pointer bytes. Mode 0 materializes and mode 1 only checks existence.
+SJ_EXPORT void sj_at_many(void* handle, const uint8_t* pointers,
+                          uint64_t pointers_length, SjResult* result) {
+  result->error_code = 0;
+  result->error_message = nullptr;
+  result->tape = nullptr;
+  result->tape_length = 0;
+
+  try {
+    constexpr uint64_t kCountBytes = 8;
+    constexpr uint64_t kEntryBytes = 24;
+    if (pointers_length < kCountBytes) {
+      fail_pointer_batch(result);
+      return;
+    }
+    const uint64_t count = read_u64_le(pointers);
+    if (count > (pointers_length - kCountBytes) / kEntryBytes ||
+        count > UINT32_MAX) {
+      fail_pointer_batch(result);
+      return;
+    }
+    const uint64_t payload_start = kCountBytes + count * kEntryBytes;
+
+    auto* document = static_cast<SjDocument*>(handle);
+    TapeWriter tape;
+    tape.u8(0x07);
+    const size_t resolved_count_at = tape.reserve_u32();
+    uint32_t resolved_count = 0;
+
+    for (uint64_t i = 0; i < count; ++i) {
+      const uint64_t entry_at = kCountBytes + i * kEntryBytes;
+      const uint64_t pointer_at =
+          read_u64_le(pointers + static_cast<size_t>(entry_at));
+      const uint64_t pointer_length =
+          read_u64_le(pointers + static_cast<size_t>(entry_at + 8));
+      const uint64_t mode =
+          read_u64_le(pointers + static_cast<size_t>(entry_at + 16));
+      if (pointer_at < payload_start || pointer_at > pointers_length ||
+          pointer_length > pointers_length - pointer_at ||
+          pointer_length > UINT32_MAX || mode > 1) {
+        fail_pointer_batch(result);
+        return;
+      }
+
+      const auto* pointer = pointers + static_cast<size_t>(pointer_at);
+      simdjson::dom::element element;
+      const auto error =
+          document->root
+              .at_pointer(std::string_view(
+                  reinterpret_cast<const char*>(pointer),
+                  static_cast<size_t>(pointer_length)))
+              .get(element);
+      if (error) {
+        const bool not_found = error == simdjson::NO_SUCH_FIELD ||
+                               error == simdjson::INDEX_OUT_OF_BOUNDS ||
+                               error == simdjson::INCORRECT_TYPE;
+        if (not_found) continue;
+        result->error_code = static_cast<int32_t>(error);
+        result->error_message = simdjson::error_message(error);
+        return;
+      }
+
+      tape.u32(static_cast<uint32_t>(pointer_length));
+      tape.raw(pointer, static_cast<size_t>(pointer_length));
+      if (mode == 1) {
+        tape.u8(0x01);
+      } else {
+        const auto write_error = write_element(element, tape);
+        if (write_error) {
+          result->error_code = static_cast<int32_t>(write_error);
+          result->error_message = simdjson::error_message(write_error);
+          return;
+        }
+      }
+      ++resolved_count;
+    }
+
+    tape.patch_u32(resolved_count_at, resolved_count);
+    size_t tape_length = 0;
+    result->tape = tape.release(&tape_length);
+    result->tape_length = tape_length;
+    if (result->tape == nullptr) {
+      fail_alloc(result);
+    }
+  } catch (...) {
+    fail_alloc(result);
+  }
+}
+
 SJ_EXPORT void sj_close(void* handle) { delete static_cast<SjDocument*>(handle); }
 
 }  // extern "C"

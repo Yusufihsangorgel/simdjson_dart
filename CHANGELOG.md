@@ -1,3 +1,53 @@
+## 1.6.0
+
+- Add `SimdJsonDocument.atMany`, which resolves several RFC 6901 value pointers
+  and optional `existencePointers` in one native call. Value pointers
+  materialize their values; existence-only hits are returned as true without
+  materializing the pointed subtree. Missing paths are omitted, and a pointer
+  requested in both modes keeps its value, so `containsKey` distinguishes an
+  explicit JSON null from a missing path.
+
+  **API justification — friction log §4, “`at` / `exists` are not on the value
+  the NDJSON APIs return,” and §7, “Each pointer is its own FFI round-trip”:**
+  the GH Archive selective scan needed value and exact existence results, and
+  every pointer was a separate FFI round-trip.
+
+- Add `simdJsonSelectNdjsonStream`, which carries incomplete byte records
+  across chunks and yields only the requested pointer/value pairs for each
+  NDJSON document. It does not expose per-line native handles, so callers do
+  not split UTF-8 into strings, re-encode it, or close a document for every
+  record. Its optional `existencePointers` provide exact presence checks
+  without materializing those subtrees. Gzip remains ordinary `dart:convert`
+  stream composition rather than a codec policy in this package.
+
+  **API justification — friction log §2, “Selective access does not exist on
+  the NDJSON path”; §4, “`at` / `exists` are not on the value the NDJSON APIs
+  return”; §5, “Getting bytes to `parseBytes` means giving up `LineSplitter`”;
+  and §6, “A document per line has to be closed per line”:** selective access
+  was not reachable from the NDJSON byte stream without rebuilding record
+  splitting, lookup, null-versus-missing handling, and native cleanup in the
+  caller.
+
+- Add `simdJsonSelectNdjsonFile`, the path-shaped selective NDJSON entry. It
+  reads raw NDJSON in 64 KiB chunks by default, accepts the same value and
+  existence pointer collections as the stream selector, and yields the same
+  maps. Like the existing full-decode file API, `chunkSize` must be at least
+  one. Compression remains an explicit transform on the stream API.
+
+  **API justification — friction log §3, “`SimdJsonDocument.openFile` does
+  not accept NDJSON”:** selective NDJSON had no file abstraction matching the
+  existing full-decode NDJSON entry.
+
+- The native batch mode changed for friction-log §§4 and 7: exact existence
+  checks must not materialize large subtrees, and multiple lookups must cross
+  FFI together. The other friction items required no C/C++ changes.
+
+- Record all nine GH Archive findings in `example/gharchive_friction.md`.
+  Gzip inference, changing `SimdJsonDocument.openFile` into an NDJSON handle,
+  a new decoded-map type, and malformed-record recovery are deliberately not
+  new APIs: Dart already supplies gzip composition and `Map`, while the other
+  two need lifecycle or recovery-policy decisions that have not been made.
+
 ## 1.5.0
 
 - **Stream NDJSON without holding the file.** `simdJsonDecodeNdjsonBytes`

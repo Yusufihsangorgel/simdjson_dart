@@ -14,11 +14,10 @@
 // unattributed to an org, and — for pull-request-bearing records — the
 // merged flag and the repo language, including the null/absent split.
 //
-// It is also a contact test. The extraction wants four nested fields per
-// record and wants to keep going when they are missing. What the public
-// API made easy, and what it did not, is written down in
-// example/gharchive_friction.md. This file does not invent helpers on
-// the package to paper over that.
+// It is also a contact test. The extraction wants a small set of nested
+// fields per record and wants to keep going when they are missing. What
+// the public API made easy, what changed after this run, and what was
+// deliberately left alone is recorded in example/gharchive_friction.md.
 //
 // The dataset is not in git. Fetch it first:
 //
@@ -43,6 +42,25 @@ import 'package:simdjson_dart/simdjson_dart.dart';
 const _defaultPath = 'data/2024-07-07-6.json.gz';
 const _sampleEvery = 20000;
 const _topN = 15;
+
+// Materialize only values the report reads.
+const _valuePointers = <String>[
+  '/type',
+  '/repo/name',
+  '/actor/login',
+  '/payload/pull_request/merged',
+  '/payload/pull_request/base/repo/language',
+];
+
+// Ask about these exact paths without materializing parent objects. `merged`
+// and `language` appear in both lists because null and missing differ.
+const _existencePointers = <String>[
+  '/org',
+  '/payload/action',
+  '/payload/pull_request',
+  '/payload/pull_request/merged',
+  '/payload/pull_request/base/repo/language',
+];
 
 void main(List<String> args) async {
   var decoder = 'simdjson';
@@ -89,10 +107,8 @@ void main(List<String> args) async {
   report.sampleRss();
   try {
     if (decoder == 'pointers') {
-      // The call the extraction actually wanted: JSON pointers on each
-      // record, without building the rest of the event. The package has
-      // no NDJSON entry that does this, so this branch splits lines
-      // itself, constructs a SimdJsonDocument per record, and closes it.
+      // The selective NDJSON entry resolves all requested pointers in one
+      // native call per record and never materializes the rest of the event.
       await _addFromPointers(file, report);
     } else {
       await for (final row in _records(file, decoder)) {
@@ -141,25 +157,25 @@ Stream<Object?> _records(File file, String decoder) {
       .map<Object?>(jsonDecode);
 }
 
-/// Per-record [SimdJsonDocument]: the selective-access API applied to
-/// NDJSON the only way the public surface allows.
+/// Selects the fields the report needs from each event without decoding the
+/// rest of the record.
 Future<void> _addFromPointers(File file, _Report report) async {
-  Stream<List<int>> bytes = file.openRead();
+  final Stream<Map<String, Object?>> selectedRecords;
   if (file.path.endsWith('.gz')) {
-    bytes = bytes.transform(gzip.decoder);
+    selectedRecords = simdJsonSelectNdjsonStream(
+      file.openRead().transform(gzip.decoder),
+      _valuePointers,
+      existencePointers: _existencePointers,
+    );
+  } else {
+    selectedRecords = simdJsonSelectNdjsonFile(
+      file.path,
+      _valuePointers,
+      existencePointers: _existencePointers,
+    );
   }
-  await for (final line
-      in bytes.transform(utf8.decoder).transform(const LineSplitter())) {
-    if (line.isEmpty) continue;
-    // `parse` takes a String. The line was just UTF-8-decoded, and
-    // parse will encode it again. `parseBytes` would skip that if the
-    // splitter had left us bytes; LineSplitter does not.
-    final doc = SimdJsonDocument.parse(line);
-    try {
-      report.addDocument(doc);
-    } finally {
-      doc.close();
-    }
+  await for (final selected in selectedRecords) {
+    report.addSelected(selected);
   }
 }
 
@@ -173,7 +189,7 @@ nested fields from each event, and print a report.
 Options:
   --decoder=simdjson   package NDJSON stream (default)
   --decoder=convert    dart:convert jsonDecode per line
-  --decoder=pointers   SimdJsonDocument.at per record (DIY line split)
+  --decoder=pointers   selective NDJSON (values and exact existence checks)
   -h, --help           this message
 
 Default file: $_defaultPath
@@ -308,41 +324,41 @@ class _Report {
     }
   }
 
-  /// Same extraction as [add], through [SimdJsonDocument.at] / [exists].
-  void addDocument(SimdJsonDocument doc) {
+  /// Adds the pointer/value map produced by [simdJsonSelectNdjsonStream].
+  void addSelected(Map<String, Object?> selected) {
     records++;
     if (records % _sampleEvery == 0) sampleRss();
 
-    final type = _string(doc.at('/type'));
+    final type = _string(selected['/type']);
     if (type == null) {
       missingType++;
     } else {
       types[type] = (types[type] ?? 0) + 1;
     }
 
-    final repo = _string(doc.at('/repo/name'));
+    final repo = _string(selected['/repo/name']);
     if (repo == null) {
       missingRepo++;
     } else {
       repos[repo] = (repos[repo] ?? 0) + 1;
     }
 
-    final actor = _string(doc.at('/actor/login'));
+    final actor = _string(selected['/actor/login']);
     if (actor == null) {
       missingActor++;
     } else {
       actors.add(actor);
     }
 
-    if (!doc.exists('/org')) missingOrg++;
-    if (!doc.exists('/payload/action')) missingAction++;
-    if (!doc.exists('/payload/pull_request')) return;
+    if (!selected.containsKey('/org')) missingOrg++;
+    if (!selected.containsKey('/payload/action')) missingAction++;
+    if (!selected.containsKey('/payload/pull_request')) return;
     pullRequests++;
 
-    if (!doc.exists('/payload/pull_request/merged')) {
+    if (!selected.containsKey('/payload/pull_request/merged')) {
       mergedMissing++;
     } else {
-      switch (doc.at('/payload/pull_request/merged')) {
+      switch (selected['/payload/pull_request/merged']) {
         case true:
           mergedTrue++;
         case false:
@@ -352,10 +368,11 @@ class _Report {
       }
     }
 
-    if (!doc.exists('/payload/pull_request/base/repo/language')) {
+    const languagePointer = '/payload/pull_request/base/repo/language';
+    if (!selected.containsKey(languagePointer)) {
       languageMissing++;
     } else {
-      final language = doc.at('/payload/pull_request/base/repo/language');
+      final language = selected[languagePointer];
       if (language == null) {
         languageNull++;
       } else if (language is String) {

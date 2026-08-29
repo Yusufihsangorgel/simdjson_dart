@@ -67,5 +67,16 @@ external void sjAt(
   Pointer<SjResult> result,
 );
 
+/// Resolves a mode-tagged, length-and-offset encoded JSON pointer batch.
+@Native<
+  Void Function(Pointer<Void>, Pointer<Uint8>, Uint64, Pointer<SjResult>)
+>(symbol: 'sj_at_many')
+external void sjAtMany(
+  Pointer<Void> handle,
+  Pointer<Uint8> pointers,
+  int pointersLength,
+  Pointer<SjResult> result,
+);
+
 @Native<Void Function(Pointer<Void>)>(symbol: 'sj_close')
 external void sjClose(Pointer<Void> handle);

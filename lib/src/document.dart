@@ -66,6 +66,11 @@ final class SimdJsonDocument implements Finalizable {
   /// collector has to account for afterwards. Measured on a 4.7 MB export,
   /// opening it and reading one pointer: 1.3 ms against 2.5 ms.
   ///
+  /// The file must contain one uncompressed JSON document; this factory does
+  /// not decompress it. Decode gzip in a caller-owned byte stream before
+  /// parsing, and use the NDJSON stream or file entry points for
+  /// newline-delimited documents.
+  ///
   /// It is a read, not a memory map: the bytes are paid for once and the file
   /// is free to change afterwards. What is saved is the trip through Dart,
   /// which is the whole file and grows with it.
@@ -157,6 +162,109 @@ final class SimdJsonDocument implements Finalizable {
     } finally {
       freeBytes(pointer);
       freeResult(result);
+    }
+  }
+
+  /// Resolves RFC 6901 pointers in one batch.
+  ///
+  /// Pointers in [jsonPointers] are materialized as values. Pointers in
+  /// [existencePointers] are only checked for existence: a hit is returned as
+  /// true without materializing its value, and a miss is omitted. If a pointer
+  /// is in both inputs, its value is materialized.
+  ///
+  /// The returned map contains distinct materialized pointers in their
+  /// first-seen order, followed by distinct existence-only pointers in their
+  /// first-seen order. Missing pointers are omitted. A materialized pointer
+  /// whose value is JSON null remains present with a null value.
+  ///
+  /// All distinct pointers cross the native boundary together. The empty
+  /// string selects the whole document. Throws [StateError] when the document
+  /// is closed and [FormatException] if any pointer is malformed.
+  ///
+  /// API justification: friction log sections 4 and 7, where `exists` was not
+  /// reachable from decoded values and each pointer was its own FFI round-trip.
+  Map<String, Object?> atMany(
+    Iterable<String> jsonPointers, {
+    Iterable<String> existencePointers = const [],
+  }) {
+    if (_closed) {
+      throw StateError('SimdJsonDocument has been closed');
+    }
+
+    final valuePointers = <String>{};
+    for (final pointer in jsonPointers) {
+      valuePointers.add(pointer);
+    }
+    // Iterating user code can close this document before the native call.
+    if (_closed) {
+      throw StateError('SimdJsonDocument has been closed');
+    }
+    final existenceOnlyPointers = <String>{};
+    for (final pointer in existencePointers) {
+      if (!valuePointers.contains(pointer)) {
+        existenceOnlyPointers.add(pointer);
+      }
+    }
+    if (_closed) {
+      throw StateError('SimdJsonDocument has been closed');
+    }
+    final pointers = [
+      for (final pointer in valuePointers)
+        (pointer: pointer, materialize: true),
+      for (final pointer in existenceOnlyPointers)
+        (pointer: pointer, materialize: false),
+    ];
+    final encoded = [for (final entry in pointers) utf8.encode(entry.pointer)];
+
+    // u64 count, then one (u64 absolute offset, u64 length, u64 mode) entry
+    // per pointer, followed by the UTF-8 payloads. Lengths keep embedded NUL
+    // bytes intact. Mode 0 materializes; mode 1 only checks existence.
+    const countBytes = 8;
+    const entryBytes = 24;
+    var batchLength = countBytes + entryBytes * encoded.length;
+    for (final pointer in encoded) {
+      batchLength += pointer.length;
+    }
+    final batch = Uint8List(batchLength);
+    final header = ByteData.sublistView(batch);
+    header.setUint64(0, encoded.length, Endian.little);
+    var payloadOffset = countBytes + entryBytes * encoded.length;
+    for (var i = 0; i < encoded.length; i++) {
+      final pointer = encoded[i];
+      final entryOffset = countBytes + i * entryBytes;
+      header
+        ..setUint64(entryOffset, payloadOffset, Endian.little)
+        ..setUint64(entryOffset + 8, pointer.length, Endian.little)
+        ..setUint64(
+          entryOffset + 16,
+          pointers[i].materialize ? 0 : 1,
+          Endian.little,
+        );
+      batch.setRange(payloadOffset, payloadOffset + pointer.length, pointer);
+      payloadOffset += pointer.length;
+    }
+
+    final input = allocateBytes(batch.length);
+    try {
+      final result = allocateResult();
+      try {
+        input.asTypedList(batch.length).setAll(0, batch);
+        sjAtMany(_handle, input, batch.length, result);
+        final r = result.ref;
+        if (r.errorCode != 0) {
+          throw FormatException(errorMessageOf(r));
+        }
+        try {
+          return decodeTape(r.tape.asTypedList(r.tapeLength))
+              as Map<String, Object?>;
+        } finally {
+          sjFree(r.tape);
+        }
+      } finally {
+        freeResult(result);
+      }
+    } finally {
+      freeBytes(input);
     }
   }
 

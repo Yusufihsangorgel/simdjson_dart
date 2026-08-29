@@ -46,13 +46,13 @@ skip: pull three fields out of a 9 MB response and leave the other 9 MB as
 bytes. That is where the 5-14x lives, and it is the reason to reach for this
 rather than the built-in.
 
-Four APIs:
+Five API groups:
 
 - **`SimdJsonDocument`** parses once and materializes only what you
   read. `SimdJsonDocument.openFile` takes a path and reads the file straight
   into the parser: a large export never has to be held as a `Uint8List`
-  first. For picking fields out of large payloads this is 5-14x faster
-  than decoding everything.
+  first. `atMany` resolves several pointers in one native call. For picking
+  fields out of large payloads this is 5-14x faster than decoding everything.
 - **`simdJsonDecodeBytes`** is a `jsonDecode` alternative that decodes
   the whole document, moderately faster on large byte inputs.
 - **`simdJsonDecodeNdjson`** decodes newline-delimited JSON (`.ndjson`,
@@ -61,6 +61,10 @@ Four APIs:
 - **`simdJsonDecodeNdjsonStream` / `simdJsonDecodeNdjsonFile`** decode
   the same format without holding the file. A `Stream` of decoded values;
   the file entry takes a path the way `openFile` does.
+- **`simdJsonSelectNdjsonStream` / `simdJsonSelectNdjsonFile`** stream NDJSON
+  but materialize only requested RFC 6901 values. A separate existence list
+  checks exact paths without materializing their subtrees; the file entry
+  reads raw NDJSON in 64 KiB chunks by default.
 
 ```dart
 import 'package:simdjson_dart/simdjson_dart.dart';
@@ -70,9 +74,13 @@ import 'package:simdjson_dart/simdjson_dart.dart';
 //   final doc = SimdJsonDocument.openFile('export.json');
 final doc = SimdJsonDocument.parseBytes(bytes);
 try {
-  final name = doc.at('/items/0/name') as String?;
-  final price = doc.at('/items/20000/price') as double?;
-  final tags = doc.at('/items/5/tags') as List?;
+  final selected = doc.atMany(
+    ['/items/0/name', '/items/5/tags'],
+    existencePointers: ['/items/20000/price', '/meta/cursor'],
+  );
+  final name = selected['/items/0/name'] as String?;
+  // Existence checks do not materialize their subtrees.
+  final hasPrice = selected.containsKey('/items/20000/price');
 } finally {
   doc.close();
 }
@@ -88,6 +96,25 @@ final rows = simdJsonDecodeNdjsonBytes(logBytes);
 await for (final row in simdJsonDecodeNdjsonFile('requests.jsonl')) {
   final record = row as Map<String, Object?>;
   if (record['level'] == 'error') print(record['msg']);
+}
+
+// Selective NDJSON: one map per record, keyed by the requested pointers.
+await for (final selected in simdJsonSelectNdjsonStream(
+  input,
+  ['/repo/name'],
+  existencePointers: ['/payload/action'],
+)) {
+  print(selected['/repo/name']);
+  print(selected.containsKey('/payload/action'));
+}
+
+// Raw NDJSON on disk has the same selective result shape.
+await for (final selected in simdJsonSelectNdjsonFile(
+  'events.jsonl',
+  ['/repo/name'],
+  existencePointers: ['/payload/action'],
+)) {
+  print(selected['/repo/name']);
 }
 ```
 
@@ -128,6 +155,22 @@ whole-buffer path returns. `example/ndjson_stream.dart` feeds the same log
 as 7-byte chunks — small enough that almost every boundary is mid-line —
 and checks the answer against a resident decode. `example/ndjson_log_scan.dart`
 answers a real question about a 20,000-line log both ways.
+
+When each record is large but the scan needs only a few fields,
+`simdJsonSelectNdjsonStream` uses the same byte carry and yields a
+`Map<String, Object?>` keyed by requested value and existence pointers. Value
+pointers materialize their values. Existence-only hits are true without
+materializing the pointed subtree; missing paths are omitted, so `containsKey`
+is the exact presence check. A pointer may be in both lists when its value can
+be JSON null and both facts matter; its materialized value wins. The caller
+still composes transport transforms explicitly; for example, a gzip source is
+`file.openRead().transform(gzip.decoder)`.
+
+`simdJsonSelectNdjsonFile` is the matching path-shaped entry for raw,
+uncompressed NDJSON. It reads 64 KiB chunks by default; `chunkSize` must be at
+least one. File opening is lazy, so an unreadable path reports its `IO_ERROR`
+`FormatException` while the returned stream is consumed, just like
+`simdJsonDecodeNdjsonFile`.
 
 ![Diagram: the lazy SimdJsonDocument.at path reads only selected fields, while simdJsonDecodeBytes does a full decode; both cross dart:ffi into native simdjson](https://raw.githubusercontent.com/Yusufihsangorgel/simdjson_dart/main/doc/architecture.png)
 
@@ -227,6 +270,18 @@ M-series.
   It is the overload `Map` has, and it matters in the same places: an absent
   key usually means "use the default", an explicit null means "no value, and
   do not default".
+- `doc.atMany(pointers, existencePointers: paths)` resolves both collections
+  in one native call. Value pointers are materialized; existence-only pointers
+  are not. Resolved existence-only paths are true in the result and missing
+  paths are omitted. If a pointer occurs in both collections, its value is
+  retained, including JSON null.
+- `simdJsonSelectNdjsonStream(source, pointers, existencePointers: paths)`
+  applies that result shape to each NDJSON record while carrying partial
+  raw-byte lines across chunks. Values it yields are ordinary Dart maps and
+  need no `close()`.
+- `simdJsonSelectNdjsonFile(path, pointers, existencePointers: paths,
+  chunkSize: size)` is the raw-file counterpart. It has the same lazy file
+  error timing and positive `chunkSize` contract as the full-decode file API.
 - `close()` frees the native document (roughly input-sized memory the
   GC cannot see). A finalizer covers forgotten documents, but call
   `close` for anything large.
@@ -319,10 +374,13 @@ curl -L -o data/2024-07-07-6.json.gz \
   https://data.gharchive.org/2024-07-07-6.json.gz
 dart run example/gharchive_report.dart
 dart run example/gharchive_report.dart --decoder=convert
+dart run example/gharchive_report.dart --decoder=pointers
 ```
 
-On a macOS arm64 machine, Dart 3.11.0, one run of each decoder on the
-full hour, folding records rather than collecting them:
+The original contact run, before the selective NDJSON APIs, measured the
+hand-built pointer path on a macOS arm64 machine with Dart 3.11.0. These are
+historical measurements of the friction that prompted 1.6.0, not a benchmark
+of `simdJsonSelectNdjsonStream` or `simdJsonSelectNdjsonFile`:
 
 | Decoder | Wall | Peak RSS | vs `jsonDecode` per line |
 |---|---|---|---|
@@ -330,10 +388,11 @@ full hour, folding records rather than collecting them:
 | `SimdJsonDocument.at` per line | 9.70 s | 206 MB | 1.5x |
 | `dart:convert` `jsonDecode` per line | 14.32 s | 202 MB | — |
 
-`dart:convert` handled the file. It did not run out of memory. The
-package's NDJSON stream was faster on this workload; the JSON-pointer
-path (line split + `parse` + `at` + `close` per record, because NDJSON
-does not yield documents) was in between.
+`dart:convert` handled the file. It did not run out of memory. The package's
+full-decode NDJSON stream was faster on that workload; the old JSON-pointer
+path (line split + `parse` + repeated `at` + `close` per record) was in
+between. `--decoder=pointers` now uses `simdJsonSelectNdjsonStream` for gzip
+and `simdJsonSelectNdjsonFile` for raw NDJSON instead of that hand-built path.
 
 Resident size did not track the 346 MB uncompressed stream. After 20,000
 records the simdjson process sat in a 199–207 MB band through the
