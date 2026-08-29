@@ -5,15 +5,21 @@ materializing the rest, using simdjson over FFI. Full-document and NDJSON
 decodes (`simdJsonDecode`, `simdJsonDecodeBytes`, `simdJsonDecodeNdjson`,
 `simdJsonDecodeNdjsonBytes`) return the same shapes as `jsonDecode`.
 Streaming NDJSON (`simdJsonDecodeNdjsonStream`, `simdJsonDecodeNdjsonFile`)
-yields one value per document without holding the file.
+yields one value per document without holding the whole input. The stream
+entry accepts `Stream<List<int>>`; the file entry reads 64 KiB chunks by
+default.
 
-Does not encode. Does not run on web, Android, iOS, or Flutter:
-`pubspec.yaml` declares linux, macos, and windows; `hook/build.dart`
-compiles the host C++ library only (`CBuilder`); stable Flutter does not
-run Dart build hooks. Skip it for small payloads (crossover ~2 KB in
-`bench/crossover.dart`) and for a Dart `String` you fully decode —
-`jsonDecode` is faster there. simdjson rejects trailing commas, `NaN`,
-lone surrogate escapes, nesting deeper than 1024, and documents over 4 GB.
+Does not encode. Does not run on web, Android, or iOS: `pubspec.yaml`
+declares linux, macos, and windows, and `hook/build.dart` compiles the host
+C++ library only (`CBuilder`). Do not repeat the old blanket claim that
+stable Flutter cannot run build hooks: a Flutter 3.41.2 package test on
+macOS resolves this package, builds the native asset, and executes a decode.
+That is evidence for the declared macOS host only, not for undeclared mobile
+or web targets. The measured selective-access crossover is ~2 KB in
+`bench/crossover.dart`; for full decoding `dart:convert` wins below about
+100 KB, and it is often faster when the input is already a Dart `String`.
+simdjson rejects trailing commas, `NaN`, lone surrogate escapes, nesting
+deeper than 1024, and documents over 4 GB.
 
 ## Usage
 
@@ -37,7 +43,7 @@ final decoded = simdJsonDecodeBytes(bytes) as Map<String, Object?>;
 NDJSON (`example/ndjson_log_scan.dart`):
 `final rows = simdJsonDecodeNdjsonBytes(bytes);`
 Streaming (`example/ndjson_stream.dart`):
-`await for (final row in simdJsonDecodeNdjsonFile(path)) { ... }`
+`await for (final row in simdJsonDecodeNdjsonFile(path)) { print(row); }`
 
 Also: `SimdJsonDocument.parse(String)`, `SimdJsonDocument.openFile(path)`
 (native file read, no `Uint8List` of the contents). Pointers are RFC 6901
@@ -66,13 +72,17 @@ Also: `SimdJsonDocument.parse(String)`, `SimdJsonDocument.openFile(path)`
   skips blank lines; empty input is `[]`; a truncated last document throws.
   Pass only complete lines (carry a mid-line tail, flush it at EOF).
 - **`simdJsonDecodeNdjsonStream` / `simdJsonDecodeNdjsonFile`**. No close.
-  A `Stream<Object?>` of the same shapes. The stream API carries the
-  unfinished line across chunks; the file API takes a path like
-  `openFile` and reads in 64 KiB chunks by default. Empty input yields
-  nothing. A truncated last document still throws. Records from earlier
-  chunks have already been yielded if a later line is malformed.
-  `toList()` undoes the memory bound. A missing file is `FormatException`
-  with `IO_ERROR`.
+  A `Stream<Object?>` of the same shapes. The stream API accepts
+  `Stream<List<int>>` and carries an unfinished line (including a split
+  UTF-8 character) across chunks. The file API takes a path like `openFile`;
+  `chunkSize` defaults to 64 KiB and values below 1 throw `ArgumentError`
+  synchronously. Empty input yields nothing. A truncated last document
+  still throws. Records from earlier chunks have already been yielded if a
+  later chunk is malformed; complete lines batched in that failing chunk
+  are not yielded. `toList()` undoes the memory bound. File opening is lazy:
+  a missing-file `FormatException` with `IO_ERROR` arrives while the stream
+  is consumed, so put `await for` or `await stream.toList()` inside the
+  `try` block.
 - Shapes match `jsonDecode`. Maps and lists are growable. `uint64` above
   `int64` is a `double`. Safe from multiple isolates (per-thread parser).
 
@@ -92,6 +102,12 @@ Also: `SimdJsonDocument.parse(String)`, `SimdJsonDocument.openFile(path)`
   The whole-buffer APIs need complete lines. Use
   `simdJsonDecodeNdjsonStream` / `simdJsonDecodeNdjsonFile`, which carry
   the tail; see `example/ndjson_stream.dart`.
+- **Catching around `simdJsonDecodeNdjsonFile(path)` without consuming it.**
+  The call only creates a stream, so it does not open the file and the catch
+  sees nothing. Catch around `await for` or `await ...toList()` instead.
+- **Collecting a large NDJSON stream.** `await stream.toList()` is correct,
+  but it retains every decoded row. Fold/process each row in `await for` if
+  bounded memory is the reason for using the streaming API.
 - **`SimdJsonDocument.parse` on an integer past uint64.**
   `FormatException: NUMBER_ERROR: Problem while parsing a number`.
   Use `simdJsonDecode` / `simdJsonDecodeBytes` (they fall back to
@@ -124,6 +140,9 @@ test/                    dart test
 toolchain must be present (Xcode CLT, gcc/clang, or MSVC). SDK `^3.10.0`.
 
 ```
+dart pub get
+dart format .
+dart analyze
 dart test
 dart run example/simdjson_dart_example.dart
 dart run example/ndjson_log_scan.dart

@@ -1,6 +1,6 @@
 # simdjson_dart
 
-Read a few fields out of a large JSON payload without decoding the rest, backed by the simdjson C++ library over FFI. Whole-document and NDJSON decoding too.
+Read selected RFC 6901 pointers out of a large JSON payload without materializing the rest, backed by the simdjson C++ library over FFI. Whole-document, resident NDJSON, and streaming NDJSON decoding too.
 
 pub.dev: https://pub.dev/packages/simdjson_dart
 source: https://github.com/Yusufihsangorgel/simdjson_dart
@@ -11,8 +11,13 @@ AGENTS.md in the repository root is written for you. It carries the contracts th
 
 It also says when NOT to reach for this package. Read that part before adding the dependency.
 
+The public surface is `SimdJsonDocument`, `simdJsonDecode`, `simdJsonDecodeBytes`, `simdJsonDecodeNdjson`, `simdJsonDecodeNdjsonBytes`, `simdJsonDecodeNdjsonStream`, and `simdJsonDecodeNdjsonFile`. Streaming yields one decoded value at a time; collecting it with `toList()` gives up the memory bound. `SimdJsonDocument` owns native memory and should be closed. Stream/file failures are observed while the stream is consumed.
+
+This is a Dart build-hooks package for the Linux, macOS, and Windows targets declared in `pubspec.yaml`; web, Android, and iOS are unsupported. A Flutter 3.41.2 package test on macOS resolves the hook, builds the native asset, and executes a decode, but that host test is not evidence for undeclared mobile or web targets. A C++17 toolchain is required. Use `dart build cli` and ship its whole `bundle/` for a standalone executable; `dart compile exe` does not carry the native asset.
+
 ## Layout
 
-- `lib/` — public API
+- `lib/simdjson_dart.dart` — public exports
+- `lib/src/` — implementation; do not import it as public API
 - `example/` — runnable examples
-- `test/` — the suite; `dart test` (or `flutter test`) runs it
+- `test/` — the suite; run `dart pub get`, `dart format .`, `dart analyze`, then `dart test`
