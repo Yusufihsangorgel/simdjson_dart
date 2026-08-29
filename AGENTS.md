@@ -87,10 +87,9 @@ Also: `SimdJsonDocument.parse(String)`, `SimdJsonDocument.openFile(path)`
   or `STRING_ERROR: Problem while parsing a string`. Stricter than
   `jsonDecode`; do not treat a swap as a drop-in for lax input.
 - **`dart compile exe`.** Compile can succeed; the binary then fails with
-  `Couldn't resolve native function 'sj_open' ... No asset with id
-  'package:simdjson_dart/src/bindings.dart' found.` Use `dart run` /
-  `dart test`, or `dart build cli` and ship the whole `bundle/` (the
-  executable loads `../lib`).
+  `Invalid argument(s): Couldn't resolve native function 'sj_open' in 'package:simdjson_dart/src/bindings.dart' : No asset with id 'package:simdjson_dart/src/bindings.dart' found.`
+  Use `dart run` / `dart test`, or `dart build cli` and ship the whole
+  `bundle/` (the executable loads `../lib`).
 
 ## Layout
 
