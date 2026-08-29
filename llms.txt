@@ -1,0 +1,18 @@
+# simdjson_dart
+
+Read a few fields out of a large JSON payload without decoding the rest, backed by the simdjson C++ library over FFI. Whole-document and NDJSON decoding too.
+
+pub.dev: https://pub.dev/packages/simdjson_dart
+source: https://github.com/Yusufihsangorgel/simdjson_dart
+
+## Before you call it
+
+AGENTS.md in the repository root is written for you. It carries the contracts that are easy to get wrong — what must be awaited or disposed, what throws and when, and the mistakes whose symptom is silence rather than an error — along with the shortest correct usage taken from a runnable example.
+
+It also says when NOT to reach for this package. Read that part before adding the dependency.
+
+## Layout
+
+- `lib/` — public API
+- `example/` — runnable examples
+- `test/` — the suite; `dart test` (or `flutter test`) runs it
