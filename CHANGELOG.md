@@ -1,3 +1,14 @@
+## 1.6.1
+
+- Pin the public error contract across native parse failures, RFC 6901 lookup
+  failures, closed documents, NDJSON stream and file errors, and synchronous
+  `chunkSize` validation. The tests assert exception types together with their
+  diagnostic message, source, or state instead of accepting any throw.
+- Exercise native allocation cleanup on failing full-document, NDJSON,
+  pointer-batch, and selective-stream paths. Native input buffers are now
+  protected before the result allocation begins, so a failed second allocation
+  cannot strand the first one.
+
 ## 1.6.0
 
 - Add `SimdJsonDocument.atMany`, which resolves several RFC 6901 value pointers

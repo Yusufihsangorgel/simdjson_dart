@@ -37,19 +37,22 @@ final class SimdJsonDocument implements Finalizable {
   /// Throws [FormatException] on invalid JSON.
   factory SimdJsonDocument.parseBytes(Uint8List json) {
     final padded = allocateBytes(json.length + 64);
-    final result = allocateResult();
     try {
-      padded.asTypedList(json.length + 64)
-        ..setAll(0, json)
-        ..fillRange(json.length, json.length + 64, 0);
-      final handle = sjOpen(padded, json.length, result);
-      if (handle == nullptr) {
-        throw FormatException(errorMessageOf(result.ref));
+      final result = allocateResult();
+      try {
+        padded.asTypedList(json.length + 64)
+          ..setAll(0, json)
+          ..fillRange(json.length, json.length + 64, 0);
+        final handle = sjOpen(padded, json.length, result);
+        if (handle == nullptr) {
+          throw FormatException(errorMessageOf(result.ref));
+        }
+        return SimdJsonDocument._(handle);
+      } finally {
+        freeResult(result);
       }
-      return SimdJsonDocument._(handle);
     } finally {
       freeBytes(padded);
-      freeResult(result);
     }
   }
 
@@ -90,17 +93,20 @@ final class SimdJsonDocument implements Finalizable {
   factory SimdJsonDocument.openFile(String path) {
     final encoded = utf8.encode(path);
     final pathBytes = allocateBytes(encoded.length);
-    final result = allocateResult();
     try {
-      pathBytes.asTypedList(encoded.length).setAll(0, encoded);
-      final handle = sjOpenFile(pathBytes, encoded.length, result);
-      if (handle == nullptr) {
-        throw FormatException(errorMessageOf(result.ref));
+      final result = allocateResult();
+      try {
+        pathBytes.asTypedList(encoded.length).setAll(0, encoded);
+        final handle = sjOpenFile(pathBytes, encoded.length, result);
+        if (handle == nullptr) {
+          throw FormatException(errorMessageOf(result.ref));
+        }
+        return SimdJsonDocument._(handle);
+      } finally {
+        freeResult(result);
       }
-      return SimdJsonDocument._(handle);
     } finally {
       freeBytes(pathBytes);
-      freeResult(result);
     }
   }
 
@@ -145,23 +151,26 @@ final class SimdJsonDocument implements Finalizable {
     }
     final pointerBytes = utf8.encode(jsonPointer);
     final pointer = allocateBytes(pointerBytes.length);
-    final result = allocateResult();
     try {
-      pointer.asTypedList(pointerBytes.length).setAll(0, pointerBytes);
-      sjAt(_handle, pointer, pointerBytes.length, result);
-      final r = result.ref;
-      if (r.errorCode == -1) return null; // Path not found.
-      if (r.errorCode != 0) {
-        throw FormatException(errorMessageOf(r), jsonPointer);
-      }
+      final result = allocateResult();
       try {
-        return decodeTape(r.tape.asTypedList(r.tapeLength));
+        pointer.asTypedList(pointerBytes.length).setAll(0, pointerBytes);
+        sjAt(_handle, pointer, pointerBytes.length, result);
+        final r = result.ref;
+        if (r.errorCode == -1) return null; // Path not found.
+        if (r.errorCode != 0) {
+          throw FormatException(errorMessageOf(r), jsonPointer);
+        }
+        try {
+          return decodeTape(r.tape.asTypedList(r.tapeLength));
+        } finally {
+          sjFree(r.tape);
+        }
       } finally {
-        sjFree(r.tape);
+        freeResult(result);
       }
     } finally {
       freeBytes(pointer);
-      freeResult(result);
     }
   }
 
@@ -286,21 +295,24 @@ final class SimdJsonDocument implements Finalizable {
     }
     final pointerBytes = utf8.encode(jsonPointer);
     final pointer = allocateBytes(pointerBytes.length);
-    final result = allocateResult();
     try {
-      pointer.asTypedList(pointerBytes.length).setAll(0, pointerBytes);
-      sjAt(_handle, pointer, pointerBytes.length, result);
-      final r = result.ref;
-      if (r.errorCode == -1) return false; // Path not found.
-      if (r.errorCode != 0) {
-        throw FormatException(errorMessageOf(r), jsonPointer);
+      final result = allocateResult();
+      try {
+        pointer.asTypedList(pointerBytes.length).setAll(0, pointerBytes);
+        sjAt(_handle, pointer, pointerBytes.length, result);
+        final r = result.ref;
+        if (r.errorCode == -1) return false; // Path not found.
+        if (r.errorCode != 0) {
+          throw FormatException(errorMessageOf(r), jsonPointer);
+        }
+        // The tape was allocated even though nothing here decodes it.
+        sjFree(r.tape);
+        return true;
+      } finally {
+        freeResult(result);
       }
-      // The tape was allocated even though nothing here decodes it.
-      sjFree(r.tape);
-      return true;
     } finally {
       freeBytes(pointer);
-      freeResult(result);
     }
   }
 

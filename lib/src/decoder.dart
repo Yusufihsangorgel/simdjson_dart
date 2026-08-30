@@ -19,28 +19,31 @@ Object? simdJsonDecodeBytes(Uint8List json) {
   // simdjson reads up to 64 bytes past the end (SIMDJSON_PADDING); give
   // it a padded copy so the read stays in bounds.
   final input = allocateBytes(json.length + 64);
-  final result = allocateResult();
   try {
-    input.asTypedList(json.length + 64)
-      ..setAll(0, json)
-      ..fillRange(json.length, json.length + 64, 0);
-    sjParse(input, json.length, result);
-
-    final r = result.ref;
-    if (r.errorCode != 0) {
-      if (_isNumberRangeError(r.errorCode)) {
-        return jsonDecode(utf8.decode(json));
-      }
-      throw FormatException(errorMessageOf(r), json);
-    }
+    final result = allocateResult();
     try {
-      return decodeTape(r.tape.asTypedList(r.tapeLength));
+      input.asTypedList(json.length + 64)
+        ..setAll(0, json)
+        ..fillRange(json.length, json.length + 64, 0);
+      sjParse(input, json.length, result);
+
+      final r = result.ref;
+      if (r.errorCode != 0) {
+        if (_isNumberRangeError(r.errorCode)) {
+          return jsonDecode(utf8.decode(json));
+        }
+        throw FormatException(errorMessageOf(r), json);
+      }
+      try {
+        return decodeTape(r.tape.asTypedList(r.tapeLength));
+      } finally {
+        sjFree(r.tape);
+      }
     } finally {
-      sjFree(r.tape);
+      freeResult(result);
     }
   } finally {
     freeBytes(input);
-    freeResult(result);
   }
 }
 
@@ -71,33 +74,36 @@ List<Object?> simdJsonDecodeNdjsonBytes(Uint8List ndjson) {
   // Same padding contract as simdJsonDecodeBytes: simdjson reads up to 64
   // bytes past the end.
   final input = allocateBytes(ndjson.length + 64);
-  final result = allocateResult();
   try {
-    input.asTypedList(ndjson.length + 64)
-      ..setAll(0, ndjson)
-      ..fillRange(ndjson.length, ndjson.length + 64, 0);
-    sjParseNdjson(input, ndjson.length, result);
-
-    final r = result.ref;
-    if (r.errorCode != 0) {
-      if (_isNumberRangeError(r.errorCode)) {
-        // One bad line fails the whole stream, so redo it line by line.
-        // Blank lines are skipped the way the shim skips them.
-        return [
-          for (final line in utf8.decode(ndjson).split('\n'))
-            if (line.trim().isNotEmpty) jsonDecode(line),
-        ];
-      }
-      throw FormatException(errorMessageOf(r), ndjson);
-    }
+    final result = allocateResult();
     try {
-      return decodeTapeMany(r.tape.asTypedList(r.tapeLength));
+      input.asTypedList(ndjson.length + 64)
+        ..setAll(0, ndjson)
+        ..fillRange(ndjson.length, ndjson.length + 64, 0);
+      sjParseNdjson(input, ndjson.length, result);
+
+      final r = result.ref;
+      if (r.errorCode != 0) {
+        if (_isNumberRangeError(r.errorCode)) {
+          // One bad line fails the whole stream, so redo it line by line.
+          // Blank lines are skipped the way the shim skips them.
+          return [
+            for (final line in utf8.decode(ndjson).split('\n'))
+              if (line.trim().isNotEmpty) jsonDecode(line),
+          ];
+        }
+        throw FormatException(errorMessageOf(r), ndjson);
+      }
+      try {
+        return decodeTapeMany(r.tape.asTypedList(r.tapeLength));
+      } finally {
+        sjFree(r.tape);
+      }
     } finally {
-      sjFree(r.tape);
+      freeResult(result);
     }
   } finally {
     freeBytes(input);
-    freeResult(result);
   }
 }
 

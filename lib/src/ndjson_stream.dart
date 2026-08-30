@@ -233,25 +233,19 @@ Stream<Object?> simdJsonDecodeNdjsonFile(
 }
 
 Stream<Uint8List> _readPath(String path, int chunkSize) async* {
-  final RandomAccessFile handle;
   try {
-    handle = await File(path).open();
+    final handle = await File(path).open();
+    try {
+      while (true) {
+        final chunk = await handle.read(chunkSize);
+        if (chunk.isEmpty) break;
+        yield chunk;
+      }
+    } finally {
+      await handle.close();
+    }
   } on FileSystemException {
     throw FormatException('IO_ERROR: Error reading the file.', path);
-  }
-  try {
-    while (true) {
-      final Uint8List chunk;
-      try {
-        chunk = await handle.read(chunkSize);
-      } on FileSystemException {
-        throw FormatException('IO_ERROR: Error reading the file.', path);
-      }
-      if (chunk.isEmpty) break;
-      yield chunk;
-    }
-  } finally {
-    await handle.close();
   }
 }
 

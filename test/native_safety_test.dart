@@ -41,9 +41,11 @@ void main() {
     // unrelated growth when measured from inside a test here.
     //
     // Each bound is derived from the payload rather than picked as a round
-    // number: it is the cost of losing the single smallest free on that path,
-    // divided by four. Removing any one free in decoder.dart or document.dart
-    // fails the matching case below.
+    // number: it is the cost of losing the single smallest buffer free on that
+    // path, divided by four. Removing the free of an input copy fails the
+    // matching case below on every run. A lost tape usually fails it too, but
+    // not on every run, and the fixed-size result struct is too small for the
+    // resident set to show 1500 leaked copies at all.
     for (final probe in const [
       ('parseBytes', 'padded input and the tape behind at()', 65.5),
       ('decodeBytes', 'the tape and the native copy of the input', 65.5),
@@ -86,6 +88,55 @@ void main() {
         );
       }, testOn: '!windows');
     }
+
+    // These are the error arms, not just the successful allocation loops
+    // above. Each child repeatedly drives a native failure and checks that a
+    // diagnostic FormatException was actually produced. The bounds use the
+    // same smallest-large-allocation rule as the success probes: losing one
+    // input, pointer batch, or failed-document free would retain at least this
+    // much over 1500 iterations. An SjResult alone is too small for a stable
+    // RSS assertion; the nested try/finally structure protects that allocation.
+    test('failure paths release native allocations', () {
+      const iterations = 1500;
+      for (final probe in const [
+        ('parseFailure', 'padded input and failed document', 65.5),
+        ('decodeFailure', 'padded input', 65.5),
+        ('ndjsonFailure', 'NDJSON input and partial tape', 92.1),
+        ('pointerFailure', 'long at/exists/atMany pointer batches', 46.9),
+        ('selectFailure', 'the per-line document on an atMany failure', 46.9),
+      ]) {
+        final (mode, what, smallestLeakMb) = probe;
+        final result = Process.runSync(Platform.resolvedExecutable, [
+          'run',
+          'test/leak_probe.dart',
+          mode,
+          '$iterations',
+        ]);
+
+        expect(
+          result.exitCode,
+          0,
+          reason: '$mode leak_probe failed: ${result.stderr}',
+        );
+        final reported = RegExp(
+          r'RSS_DELTA_MB=(-?[0-9.]+)',
+        ).firstMatch(result.stdout as String);
+        expect(
+          reported,
+          isNotNull,
+          reason: '$mode printed no measurement: ${result.stdout}',
+        );
+        final grownMb = double.parse(reported!.group(1)!);
+        expect(
+          grownMb,
+          lessThan(smallestLeakMb / 4),
+          reason:
+              '$mode grew ${grownMb}MB over $iterations iterations while '
+              'checking $what; losing the smallest native free would cost '
+              '${smallestLeakMb}MB',
+        );
+      }
+    }, testOn: '!windows');
 
     // Streaming NDJSON must not grow RSS with the file the way the
     // whole-buffer path does. Same child-process reason as the probes

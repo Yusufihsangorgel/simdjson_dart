@@ -10,6 +10,7 @@
 // Prints: a line of the form `RSS_DELTA_MB=<megabytes>`. `dart run` writes
 // build-hook progress to stdout too, so the marker is what makes the number
 // findable.
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
@@ -22,11 +23,46 @@ Uint8List _payload(int elements) => _bytes(
   '{"items":[${List.generate(elements, (i) => '{"id":$i,"n":"x$i"}').join(',')}]}',
 );
 
-void main(List<String> args) {
+Uint8List _malformedPayload(int elements) {
+  final valid = _payload(elements);
+  return Uint8List.fromList(valid.sublist(0, valid.length - 1));
+}
+
+Uint8List _malformedNdjsonPayload() {
+  final line =
+      '{"items":[${List.generate(200, (i) => '{"id":$i}').join(',')}]}';
+  return _bytes('${List.filled(20, line).join('\n')}\n{"broken":');
+}
+
+void _expectFormat(void Function() action) {
+  try {
+    action();
+  } on FormatException catch (error) {
+    if (error.message.isEmpty) {
+      throw StateError('FormatException had no diagnostic message');
+    }
+    return;
+  }
+  throw StateError('expected FormatException');
+}
+
+Future<void> _expectFormatAsync(Future<void> Function() action) async {
+  try {
+    await action();
+  } on FormatException catch (error) {
+    if (error.message.isEmpty) {
+      throw StateError('FormatException had no diagnostic message');
+    }
+    return;
+  }
+  throw StateError('expected FormatException');
+}
+
+Future<void> main(List<String> args) async {
   final mode = args[0];
   final iterations = int.parse(args[1]);
 
-  late void Function() cycle;
+  late FutureOr<void> Function() cycle;
   var warmup = 200;
 
   switch (mode) {
@@ -35,31 +71,75 @@ void main(List<String> args) {
       cycle = () => SimdJsonDocument.parseBytes(payload)
         ..at('/items')
         ..close();
+    case 'parseFailure':
+      final payload = _malformedPayload(2000);
+      cycle = () => _expectFormat(() => SimdJsonDocument.parseBytes(payload));
     case 'decodeBytes':
       final payload = _payload(2000);
       cycle = () => simdJsonDecodeBytes(payload);
+    case 'decodeFailure':
+      final payload = _malformedPayload(2000);
+      cycle = () => _expectFormat(() => simdJsonDecodeBytes(payload));
     case 'ndjson':
       final line =
           '{"items":[${List.generate(200, (i) => '{"id":$i}').join(',')}]}';
       final payload = _bytes(List.filled(20, line).join('\n'));
       warmup = 100;
       cycle = () => simdJsonDecodeNdjsonBytes(payload);
+    case 'ndjsonFailure':
+      final payload = _malformedNdjsonPayload();
+      warmup = 100;
+      cycle = () => _expectFormat(() => simdJsonDecodeNdjsonBytes(payload));
     case 'pointer':
       final key = 'k' * 32768;
       final document = SimdJsonDocument.parse('{"$key":1}');
       final pointer = '/$key';
       warmup = 100;
       cycle = () => document.at(pointer);
+    case 'pointerFailure':
+      final document = SimdJsonDocument.parse('{"a":1}');
+      final pointer = 'k' * 32768;
+      warmup = 100;
+      cycle = () {
+        _expectFormat(() => document.at(pointer));
+        _expectFormat(() => document.exists(pointer));
+        _expectFormat(() => document.atMany([pointer]));
+      };
+      try {
+        for (var i = 0; i < warmup; i++) {
+          await cycle();
+        }
+        final before = ProcessInfo.currentRss;
+        for (var i = 0; i < iterations; i++) {
+          await cycle();
+        }
+        final grownMb = (ProcessInfo.currentRss - before) / (1024 * 1024);
+        stdout.writeln('\nRSS_DELTA_MB=$grownMb');
+      } finally {
+        document.close();
+      }
+      return;
+    case 'selectFailure':
+      final line = _bytes(
+        '{"items":[${List.generate(2000, (i) => '{"id":$i,"n":"x$i"}').join(',')}]}\n',
+      );
+      final pointer = 'k' * 32768;
+      warmup = 100;
+      cycle = () => _expectFormatAsync(() async {
+        await simdJsonSelectNdjsonStream(Stream<List<int>>.value(line), [
+          pointer,
+        ]).toList();
+      });
     default:
       throw ArgumentError('unknown mode $mode');
   }
 
   for (var i = 0; i < warmup; i++) {
-    cycle();
+    await cycle();
   }
   final before = ProcessInfo.currentRss;
   for (var i = 0; i < iterations; i++) {
-    cycle();
+    await cycle();
   }
   final grownMb = (ProcessInfo.currentRss - before) / (1024 * 1024);
   stdout.writeln('\nRSS_DELTA_MB=$grownMb');
