@@ -18,7 +18,7 @@ can read a single field. If a 6 MB response carries three values you care
 about, you still pay to allocate every other string, list, and map in it.
 `SimdJsonDocument.parseBytes` parses once and materializes only what you ask
 for: `doc.at('/meta/total')` walks the parsed tape and hands back one Dart
-object (`lib/src/document.dart:121`).
+object (`SimdJsonDocument.at` in `lib/src/document.dart`).
 
 **Instead of `crimson`.** Crimson is the popular pure-Dart fast-JSON package
 and it does support RFC 6901 pointers, but they are wired up at build time.
