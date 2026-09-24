@@ -344,6 +344,18 @@ loads its library from `../lib` next to it; shipping only the file out of
 `bin/` fails the same way as `dart compile exe`. Ship the whole folder.
 `dart run` and `dart test` are unaffected.
 
+A few details of `dart build cli` that are easy to get wrong:
+
+- Bare `dart build cli` works when `bin/` holds one file. With more than one,
+  pass `--target`. A positional path is accepted and then ignored, and the
+  command fails with "the 'target' argument wasn't specified".
+- Leave out `-o`. Unless it points at a package root, it deletes whatever is
+  in that directory, recursively and without asking
+  ([dart-lang/sdk#63135](https://github.com/dart-lang/sdk/issues/63135)).
+  The default output path is fine.
+- Nothing goes into your `pubspec.yaml` for this. `dart build` is an SDK
+  command, not the `build` package: there is no `build_runner` step.
+
 Treat this as the intended path, not a gap waiting on a fix. `dart build
 cli` is where the SDK points a package that carries build hooks, and the
 open discussion on the `dart compile exe` side is about narrowing its
