@@ -18,10 +18,6 @@
         {
           "path": "pubspec.yaml",
           "lines": "42-44"
-        },
-        {
-          "path": "test/hook_test.dart",
-          "lines": null
         }
       ],
       "kind": "deviation from siblings / missing test",

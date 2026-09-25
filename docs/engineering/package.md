@@ -1,6 +1,6 @@
 # Package engineering rules: simdjson_dart
 
-Rules-Version: simdjson_dart/852e0ca8da9d02675e65a481c8d69c62ece28c63263f34de0083af05ddd38941
+Rules-Version: simdjson_dart/e0a7c8fc1e7d32b73db177479d815d5f8b9afd25cd832e38756593c0d2e327c8
 Core-Version: 1
 Core-Digest: 1825fa7ff346dca23e65b1b3bf9b2e3e06959f1414bae9952d596d2f62f09b8f
 Survey-Digest: f90f45c8a172068c3ed3b9488ba5a7cb4e58efa93c380d2d9a70b399349ec35e
