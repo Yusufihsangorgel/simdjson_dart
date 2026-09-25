@@ -182,3 +182,7 @@ dart run example/ndjson_stream.dart
 
 FFI symbols in `lib/src/bindings.dart` must match the `SJ_EXPORT`
 functions in `src/simdjson_shim.cpp`.
+
+## Contributing
+
+Before changing this repository, read [CONTRIBUTING.md](CONTRIBUTING.md), [package engineering rules](docs/engineering/package.md), and the [debt register](docs/engineering/debt.json). These requirements apply to every contributor. The usage guidance above remains the consumer contract.

@@ -1,0 +1,186 @@
+{
+  "schema_version": 1,
+  "package": "simdjson_dart",
+  "survey_digest": "f90f45c8a172068c3ed3b9488ba5a7cb4e58efa93c380d2d9a70b399349ec35e",
+  "items": [
+    {
+      "id": "simdjson_dart-D001",
+      "source_index": 1,
+      "source_item_digest": "92bbad0d56c6850fc5751bb6c953c7d17422bd65132bca1b2f9a79264ab93726",
+      "baseline_revision": "2bc4de6",
+      "status": "open",
+      "size": "small",
+      "locations": [
+        {
+          "path": "hook/build.dart",
+          "lines": "6-21"
+        },
+        {
+          "path": "pubspec.yaml",
+          "lines": "42-44"
+        },
+        {
+          "path": "test/hook_test.dart",
+          "lines": null
+        }
+      ],
+      "kind": "deviation from siblings / missing test",
+      "observation": "The `buildCodeAssets` early return and the shared hook_test.dart added to the five C/C++ siblings on 2026-09-23 are missing here (example: audio_decode hook/build.dart:22-24, CHANGELOG 1.3.5). There is also no code_assets dependency in pubspec. The hook does not read config today; whether the same failure occurs here was not measured.",
+      "certainty": "probable",
+      "proposed_fix": "Add `code_assets: ^2.0.0`, add the guard line, add the test/hook_test.dart from the siblings, and record it in CHANGELOG.",
+      "related_rule_ids": [],
+      "issue_url": null,
+      "closure_criteria": "hook/build.dart returns early when input.config.buildCodeAssets is false, pubspec.yaml declares code_assets and test/hook_test.dart covers the code-asset-free path. CHANGELOG.md records the change.",
+      "review_trigger": "Before modifying the affected code",
+      "resolution": null
+    },
+    {
+      "id": "simdjson_dart-D002",
+      "source_index": 2,
+      "source_item_digest": "68d9757e7f2ad7035299daefa01a2dc5d24f661e568b1cee972304be5767f2d7",
+      "baseline_revision": "2bc4de6",
+      "status": "open",
+      "size": "small",
+      "locations": [
+        {
+          "path": "lib/src/decoder.dart",
+          "lines": "144-169"
+        }
+      ],
+      "kind": "inconsistency (FFI memory)",
+      "observation": "The C runtime malloc/free are bound directly with `@Native(symbol: 'malloc'/'free')`. The siblings deliberately avoid this because symbol lookup does not resolve on Windows (blake3_ffi, image_ffi and re2 bindings.dart:8-10). Why it works here is not documented.",
+      "certainty": "confirmed",
+      "proposed_fix": "Export `sj_alloc`/`sj_dealloc` from the shim (allocation and deallocation in the same CRT) or document the resolution path in a comment + a Windows test.",
+      "related_rule_ids": [
+        "simdjson_dart/SJ-15"
+      ],
+      "issue_url": null,
+      "closure_criteria": "Either the shim exports sj_alloc and sj_dealloc and decoder.dart uses only those, or a comment documents the Windows resolution path and a Windows test covers it.",
+      "review_trigger": "Before modifying the affected code",
+      "resolution": null
+    },
+    {
+      "id": "simdjson_dart-D003",
+      "source_index": 3,
+      "source_item_digest": "cac2216ed8ab186f6e7c8e540c9b97aafaffc578838671d797cbe0cb28cab71c",
+      "baseline_revision": "2bc4de6",
+      "status": "open",
+      "size": "small",
+      "locations": [
+        {
+          "path": "lib/src/decoder.dart",
+          "lines": "18-48,73-108"
+        },
+        {
+          "path": "lib/src/document.dart",
+          "lines": "39-45"
+        }
+      ],
+      "kind": "duplicated logic + magic number",
+      "observation": "The padded-copy skeleton appears in three places and the `64` literal nine times. The simdJsonDecodeBytes and simdJsonDecodeNdjsonBytes skeletons are the same.",
+      "certainty": "confirmed",
+      "proposed_fix": "`const _simdjsonPadding = 64` + a `copyPadded(Uint8List)` helper; both decode paths call the shared private function.",
+      "related_rule_ids": [
+        "simdjson_dart/SJ-03"
+      ],
+      "issue_url": null,
+      "closure_criteria": "A single copyPadded helper with const _simdPadding = 64 serves every padded-copy site and both byte decode paths call it.",
+      "review_trigger": "Before modifying the affected code",
+      "resolution": null
+    },
+    {
+      "id": "simdjson_dart-D004",
+      "source_index": 4,
+      "source_item_digest": "f9f15fd9652ed09171381cea50eb84c1c4f135e8e8e1114fa88f8b5293ac1ba3",
+      "baseline_revision": "2bc4de6",
+      "status": "open",
+      "size": "small",
+      "locations": [
+        {
+          "path": "lib/src/document.dart",
+          "lines": "149-151,199-201,208-210,217-219,293-295"
+        }
+      ],
+      "kind": "duplicated logic",
+      "observation": "The `_closed` check is written inline five times; at and exists repeat the same pointer-encoding + sjAt skeleton.",
+      "certainty": "confirmed",
+      "proposed_fix": "`_checkOpen()` and a shared private `_lookup` helper.",
+      "related_rule_ids": [],
+      "issue_url": null,
+      "closure_criteria": "The five inline _closed checks call a shared _checkOpen and the at and exists lookups share one private helper.",
+      "review_trigger": "Before modifying the affected code",
+      "resolution": null
+    },
+    {
+      "id": "simdjson_dart-D005",
+      "source_index": 5,
+      "source_item_digest": "14f1bcf61a8af2f9f439b0d2c48efb5f6ed33b480439b8bc21197ecb95073b51",
+      "baseline_revision": "2bc4de6",
+      "status": "open",
+      "size": "medium",
+      "locations": [
+        {
+          "path": "lib/src/document.dart",
+          "lines": "292-316"
+        }
+      ],
+      "kind": "performance",
+      "observation": "exists builds and discards the value's tape on the native side (lines 302, 308-309). The existence mode of atMany (mode 1) does not do this. `exists('')` serializes the whole document.",
+      "certainty": "confirmed",
+      "proposed_fix": "Route exists to the existence mode or a separate `sj_exists` shim entry; keep exists_test and add a cost measurement.",
+      "related_rule_ids": [],
+      "issue_url": null,
+      "closure_criteria": "exists routes through the atMany existence mode or a dedicated sj_exists shim entry. exists_test stays green and a recorded cost measurement shows the value tape is no longer built.",
+      "review_trigger": "Before modifying the affected code",
+      "resolution": null
+    },
+    {
+      "id": "simdjson_dart-D006",
+      "source_index": 6,
+      "source_item_digest": "9c56c6415730655274f4a24aeaf0ccdb01dfc72cfd5fc583075b938092b0dc3d",
+      "baseline_revision": "2bc4de6",
+      "status": "open",
+      "size": "small",
+      "locations": [
+        {
+          "path": "lib/src/decoder.dart",
+          "lines": "131"
+        }
+      ],
+      "kind": "magic number / no source link",
+      "observation": "`code == 9 || code == 10` depends on simdjson enum values; the vendored version or the enum location is not recorded. The behavior is covered by the decoder_test.dart:86 group.",
+      "certainty": "confirmed",
+      "proposed_fix": "Return a named flag from the shim or record the vendored version and the enum names in a comment.",
+      "related_rule_ids": [
+        "simdjson_dart/SJ-06"
+      ],
+      "issue_url": null,
+      "closure_criteria": "The shim returns a named fallback flag or a comment records the vendored simd version and the enum names behind codes 9 and 10. The decoder_test.dart group at line 86 stays green.",
+      "review_trigger": "Before modifying the affected code",
+      "resolution": null
+    },
+    {
+      "id": "simdjson_dart-D007",
+      "source_index": 7,
+      "source_item_digest": "b79b8fb153665943f61af5fc962f41db0fe0e0a9b3088ba1e9e0eea147254bc4",
+      "baseline_revision": "2bc4de6",
+      "status": "open",
+      "size": "small",
+      "locations": [
+        {
+          "path": "analysis_options.yaml",
+          "lines": "1-30"
+        }
+      ],
+      "kind": "analysis strictness + template noise",
+      "observation": "The default template comments are still there; only recommended.",
+      "certainty": "confirmed",
+      "proposed_fix": "Clean up the template and turn on the image_ffi settings.",
+      "related_rule_ids": [],
+      "issue_url": null,
+      "closure_criteria": "analysis_options.yaml carries no template comments and enables the image_ffi strict settings with no new diagnostics from dart analyze.",
+      "review_trigger": "Before modifying the affected code",
+      "resolution": null
+    }
+  ]
+}
