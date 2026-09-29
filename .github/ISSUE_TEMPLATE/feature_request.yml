@@ -1,0 +1,28 @@
+name: Feature request
+description: An API or behavior change for simdjson_dart.
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One maintainer looks after this package, best effort. A request that
+        states a problem is easier to judge than one that states a solution.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What you tried to do and what stopped you.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed API or behavior
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives you considered
+    validations:
+      required: false

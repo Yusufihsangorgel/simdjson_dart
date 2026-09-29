@@ -1,0 +1,64 @@
+name: Bug report
+description: Something in simdjson_dart that does not work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        One maintainer looks after this package, best effort. A report with
+        the fields below filled in can be examined without a round of
+        questions first.
+  - type: input
+    id: package-version
+    attributes:
+      label: Package version
+      description: The simdjson_dart version your app resolves, from pubspec.lock.
+      placeholder: "1.6.1"
+    validations:
+      required: true
+  - type: textarea
+    id: dart-version
+    attributes:
+      label: Dart version
+      description: Run dart --version and paste the full output.
+    validations:
+      required: true
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Android
+        - iOS
+        - Linux
+        - macOS
+        - Web
+        - Windows
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: What to run and press, in order.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: sample
+    attributes:
+      label: Minimal code sample
+      description: The smallest code that shows the problem. Skip it only if the steps above need no code.
+    validations:
+      required: false
