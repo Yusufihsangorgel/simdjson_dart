@@ -20,9 +20,23 @@ about, you still pay to allocate every other string, list, and map in it.
 for: `doc.at('/meta/total')` walks the parsed tape and hands back one Dart
 object (`lib/src/document.dart:148`).
 
-**Paths that are only known at runtime.** `SimdJsonDocument` takes RFC 6901
-pointer strings when the program runs. A path can come from a config file or
-a mapping table instead of being fixed in your source.
+**Instead of `crimson`.** Both packages can read a nested field by an
+RFC 6901 pointer. In `crimson` the pointer is written in a `@JsonName`
+annotation on a class field, and `build_runner` turns it into typed parsing
+code before the program runs. Its README says the pointers are evaluated at
+compile time and that it does not verify your JSON. Here the pointer is an
+ordinary `String` passed to `doc.at` or `doc.atMany` while the program runs.
+It can come from a config file or a mapping table, and each call returns
+plain `jsonDecode` types. Invalid input throws `FormatException`
+(`test/document_test.dart`).
+
+- Pick this package when the paths are only known at runtime, or when you
+  want strict validation and are fine with a C++17 toolchain and no web
+  support.
+- Pick `crimson` when the paths are fixed in your source, you want typed
+  classes, and you accept a code generation step. pub.dev lists it for
+  every platform including web, and its pubspec declares no native build
+  step.
 
 **Reach for it when**
 

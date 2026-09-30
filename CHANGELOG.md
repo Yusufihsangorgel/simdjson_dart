@@ -2,8 +2,9 @@
 
 - README: state that a C++17 toolchain is needed to build the native code,
   instead of saying there is nothing to install.
-- README: replace the unchecked comparison with `crimson` by a note that
-  `SimdJsonDocument` takes pointer paths at runtime.
+- README: replace the unchecked comparison with `crimson` by a checked one:
+  `SimdJsonDocument` takes pointer paths at runtime, `crimson` fixes them at
+  code generation time, and each is the better pick in its own case.
 - README: the benchmark baseline no longer says `jsonDecode` maps materialize
   lazily, which contradicted the rest of the page.
 - README: point the `at` source link at the current line.
