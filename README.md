@@ -3,9 +3,9 @@
 # simdjson_dart
 
 Read a few fields out of a large JSON payload without decoding the rest,
-powered by the [simdjson](https://simdjson.org) C++ library over FFI. The
-native code is compiled automatically at build time through Dart build hooks;
-there is nothing to install.
+powered by the [simdjson](https://simdjson.org) C++ library over FFI. Dart
+build hooks compile the native code at build time and need a C++17 toolchain
+(see [Platform support](#platform-support)).
 
 ![A terminal run of the benchmark: a 9.3 MB JSON API response, three fields
 read out of it, `jsonDecode` plus indexing taking 71 ms against
@@ -18,16 +18,11 @@ can read a single field. If a 6 MB response carries three values you care
 about, you still pay to allocate every other string, list, and map in it.
 `SimdJsonDocument.parseBytes` parses once and materializes only what you ask
 for: `doc.at('/meta/total')` walks the parsed tape and hands back one Dart
-object (`lib/src/document.dart:121`).
+object (`lib/src/document.dart:148`).
 
-**Instead of `crimson`.** Crimson is the popular pure-Dart fast-JSON package
-and it does support RFC 6901 pointers, but they are wired up at build time.
-You annotate a class with `@json` and run `build_runner`, and its README notes
-that "JSON pointers are evaluated at compile time and optimized code is
-generated," and that "you can only use a pointer prefix once in a class"
-(README, "JSON Pointers"). That is a good trade when you know the shape ahead
-of time. It does not help when the path is a string you received at runtime,
-or when you want both `/user` and `/user/name` out of the same payload.
+**Paths that are only known at runtime.** `SimdJsonDocument` takes RFC 6901
+pointer strings when the program runs. A path can come from a config file or
+a mapping table instead of being fixed in your source.
 
 **Reach for it when**
 
@@ -178,7 +173,8 @@ least one. File opening is lazy, so an unreadable path reports its `IO_ERROR`
 
 Medians on an Apple Silicon MacBook (macOS arm64, Dart 3.11), synthetic
 workloads from `bench/bench.dart`. Baseline is `dart:convert` doing the
-same work, including reading the results (its maps materialize lazily).
+same work, including reading the results. `jsonDecode` builds its object tree
+during decoding.
 
 ![benchmark](https://raw.githubusercontent.com/Yusufihsangorgel/simdjson_dart/main/doc/bench.png)
 

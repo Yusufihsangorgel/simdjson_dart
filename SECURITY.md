@@ -2,7 +2,7 @@
 
 ## Supported versions
 
-Only the latest published version, 1.6.1, receives fixes.
+Only the latest version published on pub.dev receives fixes.
 
 ## Reporting a vulnerability
 

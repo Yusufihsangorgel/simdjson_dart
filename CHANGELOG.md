@@ -1,3 +1,13 @@
+## 1.6.2
+
+- README: state that a C++17 toolchain is needed to build the native code,
+  instead of saying there is nothing to install.
+- README: replace the unchecked comparison with `crimson` by a note that
+  `SimdJsonDocument` takes pointer paths at runtime.
+- README: the benchmark baseline no longer says `jsonDecode` maps materialize
+  lazily, which contradicted the rest of the page.
+- README: point the `at` source link at the current line.
+
 ## 1.6.1
 
 - Pin the public error contract across native parse failures, RFC 6901 lookup
