@@ -234,6 +234,9 @@ jobs:
 
       # The action runs each script line in a separate shell. It sets
       # EMULATOR_PORT, and the emulator's adb serial is emulator-<port>.
+      # Flutter 3.50.0 has no suite load timeout of its own (see the
+      # simulator job). The dart_test.yaml line sets 12 minutes. A launch
+      # that never connects then fails there and not at the job limit.
       - name: Decode on the emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -242,6 +245,7 @@ jobs:
           arch: x86_64
           working-directory: ${{ runner.temp }}/compat_app
           script: |
+            echo 'suite_load_timeout: 12m' > dart_test.yaml
             adb devices -l
             echo "device emulator-$EMULATOR_PORT, API $(adb -s emulator-$EMULATOR_PORT shell getprop ro.build.version.sdk), ABI $(adb -s emulator-$EMULATOR_PORT shell getprop ro.product.cpu.abi)"
             flutter test integration_test -d emulator-$EMULATOR_PORT
