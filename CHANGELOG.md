@@ -19,6 +19,11 @@
   code-asset builds.
 - Depend on `code_assets` directly with `>=1.2.1 <3.0.0`, which keeps the
   package resolvable on Flutter 3.38 to 3.44.
+- README: Flutter support is described only as far as CI runs it. A generated
+  Flutter app decodes JSON on Linux, on Android emulators at API 24 and 36, and
+  on an iOS simulator.
+- The pubspec now declares Android and iOS besides Linux, macOS and Windows.
+  Web is not listed.
 
 ## 1.6.1
 

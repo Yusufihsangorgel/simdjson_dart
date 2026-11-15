@@ -426,8 +426,14 @@ Build hooks are stable in Flutter since 3.38. The workflow in
 on this package, once for each of Flutter 3.38, 3.41, 3.44, 3.47 and 3.50. It
 builds the app for Linux and runs a decode test there. It also builds a
 release APK and checks the native library in it for 16 KB alignment and for
-the libraries it links. Nothing runs on Android or iOS yet, and the package
-declares only Linux, macOS, and Windows.
+the libraries it links. The same app and test also run on x86_64 Android
+emulators at API 24 and 36 and on an iOS simulator on an arm64 macOS runner
+(iPhone 16, iOS 18.5, Xcode 16.4), using Flutter 3.38.10 and 3.50.0. The test
+parses a document, reads fields by pointer, decodes NDJSON and checks the error
+for invalid input. The package declares Android, iOS, Linux, macOS, and
+Windows. Physical devices, arm64 Android, Android with 16 KB pages, and Flutter
+apps on macOS or Windows are not run in CI. The package uses `dart:ffi` and
+does not run on the web.
 
 ## Credits and licenses
 

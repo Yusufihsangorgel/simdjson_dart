@@ -1,9 +1,12 @@
 // Runs inside the app the compat workflow generates and not in this package.
 // The flutter_test and integration_test imports resolve in that app.
 // tool/ci/prepare_app.dart copies it to the app's integration_test directory.
+// The same file runs on Linux, an Android emulator and an iOS simulator. The
+// documents are inline and nothing here depends on the host platform.
 
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:integration_test/integration_test.dart';
 import 'package:simdjson_dart/simdjson_dart.dart';
@@ -26,10 +29,15 @@ void main() {
     final decoded = simdJsonDecode(_json);
 
     expect(decoded, jsonDecode(_json));
-    final meta = (decoded as Map<String, Object?>)['meta'] as Map;
+    final root = decoded as Map<String, Object?>;
+    final meta = root['meta'] as Map;
     expect(meta['total'], 3);
     expect(meta['ratio'], 1.25);
     expect(meta['big'], -2500.0);
+    debugPrint(
+      'decoded ${(root['items'] as List).length} items, '
+      'total ${meta['total']}, ratio ${meta['ratio']}',
+    );
   });
 
   test('reads single fields without decoding the rest', () {
@@ -44,6 +52,10 @@ void main() {
     expect(doc.at('/meta/cursor'), isNull);
     expect(doc.exists('/meta/ratio'), isTrue);
     expect(doc.exists('/meta/cursor'), isFalse);
+    debugPrint(
+      'read ${doc.at('/meta/total')} total and ${doc.at('/items/0/name')} '
+      'by pointer',
+    );
   });
 
   test('decodes NDJSON records', () {
@@ -54,6 +66,7 @@ void main() {
       {'n': 2},
       {'n': 3},
     ]);
+    debugPrint('decoded ${records.length} NDJSON records');
   });
 
   test('rejects invalid JSON with a FormatException from the parser', () {

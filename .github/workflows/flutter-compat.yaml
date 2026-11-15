@@ -5,7 +5,11 @@ name: flutter-compat
 # pick the expected hooks, code_assets and native_toolchain_c. The Linux build
 # has to compile and decode JSON on the device. The release APK has to carry
 # a 16 KB aligned library for every ABI, with the C++ standard library linked
-# in statically. Nothing runs on Android or iOS.
+# in statically. The same app and decode test then run on an Android emulator
+# and an iOS simulator, on the oldest and newest Flutter release here.
+#
+# The mobile jobs reuse the setup steps of the compat job through YAML
+# anchors. APP_PLATFORMS picks the platforms `flutter create` generates.
 
 on:
   push:
@@ -16,6 +20,10 @@ on:
   schedule:
     - cron: '43 7 * * 1'
   workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -28,6 +36,8 @@ jobs:
     # Pinned. A newer image may lack libstdc++-12-dev.
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    env:
+      APP_PLATFORMS: linux,android
     strategy:
       fail-fast: false
       matrix:
@@ -72,7 +82,8 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - uses: subosito/flutter-action@v2
+      - &setup-flutter
+        uses: subosito/flutter-action@v2
         with:
           flutter-version: ${{ matrix.flutter.version }}
           channel: stable
@@ -87,12 +98,14 @@ jobs:
           sudo apt-get install -y clang cmake ninja-build pkg-config \
             libgtk-3-dev liblzma-dev libstdc++-12-dev xvfb
 
-      - name: Create the consumer app
+      - &create-app
+        name: Create the consumer app
         working-directory: ${{ runner.temp }}
-        run: flutter create --platforms=linux,android --project-name compat_app compat_app
+        run: flutter create --platforms="$APP_PLATFORMS" --project-name compat_app compat_app
 
       # Copies the decode test in, then depends on this checkout by path.
-      - name: Add simdjson_dart
+      - &add-simdjson-dart
+        name: Add simdjson_dart
         run: |
           dart tool/ci/prepare_app.dart "$RUNNER_TEMP/compat_app"
           cd "$RUNNER_TEMP/compat_app"
@@ -174,3 +187,126 @@ jobs:
         if: matrix.target == 'android'
         working-directory: ${{ runner.temp }}/compat_app
         run: dart "$GITHUB_WORKSPACE/tool/ci/check_apk.dart" build/app/outputs/flutter-apk/app-release.apk
+
+  android-emulator:
+    name: Flutter ${{ matrix.flutter.version }} Android API ${{ matrix.api-level }} emulator
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      APP_PLATFORMS: android
+    strategy:
+      fail-fast: false
+      matrix:
+        flutter:
+          - version: 3.38.10
+          - version: 3.50.0
+        # Flutter 3.38.10 and 3.50.0 both write minSdkVersion 24 and
+        # targetSdkVersion 36 into a new app. The emulator runs the oldest
+        # Android the app installs on and the one it targets.
+        api-level: [24, 36]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - *setup-flutter
+      - *create-app
+      - *add-simdjson-dart
+
+      - name: Show the Flutter version
+        run: flutter --version
+
+      # Gradle, the NDK and the build hook run here and not while the emulator
+      # waits. A build failure then shows up as its own step.
+      - name: Build the x86_64 debug APK
+        working-directory: ${{ runner.temp }}/compat_app
+        run: flutter build apk --debug --target-platform android-x64
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
+            | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      # The action runs each script line in a separate shell. It sets
+      # EMULATOR_PORT, and the emulator's adb serial is emulator-<port>.
+      - name: Decode on the emulator
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: ${{ matrix.api-level }}
+          target: google_apis
+          arch: x86_64
+          working-directory: ${{ runner.temp }}/compat_app
+          script: |
+            adb devices -l
+            echo "device emulator-$EMULATOR_PORT, API $(adb -s emulator-$EMULATOR_PORT shell getprop ro.build.version.sdk), ABI $(adb -s emulator-$EMULATOR_PORT shell getprop ro.product.cpu.abi)"
+            flutter test integration_test -d emulator-$EMULATOR_PORT
+
+  ios-simulator:
+    name: Flutter ${{ matrix.flutter.version }} iOS simulator
+    # Pinned to Xcode 16.4, the macos-15 default. Flutter 3.38.10 needs Xcode 14
+    # or newer and 3.50.0 needs Xcode 15 or newer, and both run on it.
+    runs-on: macos-15
+    timeout-minutes: 45
+    env:
+      APP_PLATFORMS: ios
+      XCODE: /Applications/Xcode_16.4.app
+      # Both ship with Xcode 16.4 on macos-15.
+      SIMULATOR_DEVICE: com.apple.CoreSimulator.SimDeviceType.iPhone-16
+      SIMULATOR_RUNTIME: com.apple.CoreSimulator.SimRuntime.iOS-18-5
+    strategy:
+      fail-fast: false
+      matrix:
+        flutter:
+          - version: 3.38.10
+          - version: 3.50.0
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select --switch "$XCODE"
+
+      - *setup-flutter
+      - *create-app
+      - *add-simdjson-dart
+
+      - name: Show the Flutter and Xcode versions
+        run: |
+          flutter --version
+          xcodebuild -version
+
+      - name: Boot a simulator
+        run: |
+          udid=$(xcrun simctl create simdjson_dart_ci "$SIMULATOR_DEVICE" "$SIMULATOR_RUNTIME")
+          xcrun simctl boot "$udid"
+          xcrun simctl bootstatus "$udid" -b
+          xcrun simctl list devices booted
+          echo "SIMULATOR_UDID=$udid" >> "$GITHUB_ENV"
+
+      # Flutter 3.38.10 and 3.50.0 can launch the app before their simulator
+      # `log stream` is ready and then miss the VM service URL
+      # (flutter/flutter#181771, fixed on master by flutter/flutter#193142).
+      # The test then times out after 12 minutes without running and Flutter
+      # prints the debug connection error below. Only that case is retried,
+      # once. A failing test is never retried.
+      - name: Decode on the simulator
+        working-directory: ${{ runner.temp }}/compat_app
+        shell: bash
+        run: |
+          echo "device $SIMULATOR_UDID"
+          signature='Error waiting for a debug connection: The log reader failed unexpectedly'
+          for attempt in 1 2; do
+            log="$RUNNER_TEMP/decode-$attempt.log"
+            if flutter test integration_test -d "$SIMULATOR_UDID" 2>&1 | tee "$log"; then
+              exit 0
+            fi
+            if [ "$attempt" = 2 ] || ! grep -qF "$signature" "$log" ||
+              ! grep -qF '0 tests passed, 1 failed.' "$log"; then
+              exit 1
+            fi
+            echo "::warning::The app never reported its VM service URL. Retrying once."
+          done
