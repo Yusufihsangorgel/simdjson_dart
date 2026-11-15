@@ -76,7 +76,9 @@ jobs:
         with:
           flutter-version: ${{ matrix.flutter.version }}
           channel: stable
-          cache: true
+          # Not cached. One release takes about 1.7 GB of the 10 GB repository
+          # cache and the matrix needs five of them.
+          cache: false
 
       - name: Install the Linux desktop toolchain
         if: matrix.target == 'linux'
@@ -125,20 +127,48 @@ jobs:
         run: xvfb-run -a flutter test integration_test -d linux
 
       # Gradle and its dependencies only. An NDK the runner lacks is still
-      # downloaded on each run.
-      - if: matrix.target == 'android'
-        uses: actions/cache@v4
+      # downloaded on each run. The key hashes the Gradle, Android plugin and
+      # Kotlin versions that the Flutter template writes. Release lines with
+      # one template share an entry of about 1.2 GB. GitHub evicts an entry
+      # after a week without a restore.
+      - name: Key the Gradle cache
+        id: gradle-key
+        if: matrix.target == 'android'
+        working-directory: ${{ runner.temp }}/compat_app/android
+        run: |
+          hash=$(cat gradle/wrapper/gradle-wrapper.properties settings.gradle.kts | sha256sum | cut -c1-16)
+          echo "key=gradle-$RUNNER_OS-$hash" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the Gradle cache
+        id: gradle-cache
+        if: matrix.target == 'android'
+        uses: actions/cache/restore@v4
         with:
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper
-          key: gradle-${{ runner.os }}-flutter-${{ matrix.flutter.version }}
+          key: ${{ steps.gradle-key.outputs.key }}
 
       # The template signs release builds with the debug key.
       - name: Build the release APK
         if: matrix.target == 'android'
         working-directory: ${{ runner.temp }}/compat_app
         run: flutter build apk --release
+
+      # Saved only from main and only when the restore missed. Two rows with
+      # one template can both miss. The second save then logs a warning and
+      # the job still passes.
+      - name: Save the Gradle cache
+        if: >-
+          matrix.target == 'android' &&
+          steps.gradle-cache.outputs.cache-hit != 'true' &&
+          (github.event_name == 'push' || github.event_name == 'schedule')
+        uses: actions/cache/save@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ steps.gradle-key.outputs.key }}
 
       - name: Check the packed native libraries
         if: matrix.target == 'android'
