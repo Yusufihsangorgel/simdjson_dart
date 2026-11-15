@@ -292,12 +292,16 @@ jobs:
       # (flutter/flutter#181771, fixed on master by flutter/flutter#193142).
       # The test then times out after 12 minutes without running and Flutter
       # prints the debug connection error below. Only that case is retried,
-      # once. A failing test is never retried.
+      # once. A failing test is never retried. Flutter 3.50.0 ships
+      # test_core 0.6.20, which has no suite load timeout by default
+      # (dart-lang/test#2505) and waits until the job is cancelled. The
+      # dart_test.yaml line below sets the 12 minutes again.
       - name: Decode on the simulator
         working-directory: ${{ runner.temp }}/compat_app
         shell: bash
         run: |
           echo "device $SIMULATOR_UDID"
+          echo 'suite_load_timeout: 12m' > dart_test.yaml
           signature='Error waiting for a debug connection: The log reader failed unexpectedly'
           for attempt in 1 2; do
             log="$RUNNER_TEMP/decode-$attempt.log"
