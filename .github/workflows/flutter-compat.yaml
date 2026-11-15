@@ -255,8 +255,8 @@ jobs:
     # Pinned to Xcode 16.4, the macos-15 default. Flutter 3.38.10 needs Xcode 14
     # or newer and 3.50.0 needs Xcode 15 or newer, and both run on it.
     runs-on: macos-15
-    # Room for three simulator attempts of about 13 minutes each.
-    timeout-minutes: 55
+    # Room for four simulator attempts of about 13 minutes each.
+    timeout-minutes: 65
     env:
       APP_PLATFORMS: ios
       XCODE: /Applications/Xcode_16.4.app
@@ -297,9 +297,9 @@ jobs:
       # (flutter/flutter#181771, fixed on master by flutter/flutter#193142).
       # Flutter 3.50.0 ships test_core 0.6.20, which has no suite load
       # timeout by default (dart-lang/test#2505). The script sets 12 minutes
-      # and runs the test up to three times. Only a run that started no test
-      # is retried.
+      # and runs the test up to four times on the simulator. Only a run that
+      # started no test is retried.
       - name: Decode on the simulator
         working-directory: ${{ runner.temp }}/compat_app
         shell: bash
-        run: sh "$GITHUB_WORKSPACE/tool/ci/run_device_test.sh" "$SIMULATOR_UDID"
+        run: sh "$GITHUB_WORKSPACE/tool/ci/run_device_test.sh" --max-attempts 4 "$SIMULATOR_UDID"

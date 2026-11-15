@@ -57,7 +57,7 @@ done
 
 [ -n "$device" ] || usage
 case $max_attempts in
-  '' | *[!0-9]* | 0) usage ;;
+  '' | *[!0-9]* | 0*) usage ;;
 esac
 
 load_timeout='TimeoutException after 0:12:00.000000: Test timed out after 12 minutes'
@@ -66,11 +66,11 @@ log_reader='Error waiting for a debug connection: The log reader failed unexpect
 # Prints why the run logged in $1 started no test. Fails if it started one.
 started_no_test() {
   grep -qE '(^|[^0-9])0 tests passed, 1 failed\.' "$1" || return 1
-  grep -qE 'loading .*(\(failed\)|\[E\])' "$1" || return 1
-  if grep -qF "$load_timeout" "$1"; then
-    echo 'the suite did not load within 12 minutes'
-  elif grep -qF "$log_reader" "$1"; then
+  grep -qE 'loading [^ ]+\.dart (\(failed\)|\[E\])' "$1" || return 1
+  if grep -qF "$log_reader" "$1"; then
     echo 'the app never reported its VM service URL'
+  elif grep -qF "$load_timeout" "$1"; then
+    echo 'the suite did not load within 12 minutes'
   else
     return 1
   fi
