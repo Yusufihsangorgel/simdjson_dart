@@ -251,7 +251,8 @@ jobs:
     # Pinned to Xcode 16.4, the macos-15 default. Flutter 3.38.10 needs Xcode 14
     # or newer and 3.50.0 needs Xcode 15 or newer, and both run on it.
     runs-on: macos-15
-    timeout-minutes: 45
+    # Room for three simulator attempts of about 13 minutes each.
+    timeout-minutes: 55
     env:
       APP_PLATFORMS: ios
       XCODE: /Applications/Xcode_16.4.app
@@ -292,10 +293,10 @@ jobs:
       # (flutter/flutter#181771, fixed on master by flutter/flutter#193142).
       # The test then times out after 12 minutes without running and Flutter
       # prints the debug connection error below. Only that case is retried,
-      # once. A failing test is never retried. Flutter 3.50.0 ships
+      # up to twice. A failing test is never retried. Flutter 3.50.0 ships
       # test_core 0.6.20, which has no suite load timeout by default
-      # (dart-lang/test#2505) and waits until the job is cancelled. The
-      # dart_test.yaml line below sets the 12 minutes again.
+      # (dart-lang/test#2505). Without one the test waits until the job is
+      # cancelled. The dart_test.yaml line below sets 12 minutes again.
       - name: Decode on the simulator
         working-directory: ${{ runner.temp }}/compat_app
         shell: bash
@@ -303,14 +304,14 @@ jobs:
           echo "device $SIMULATOR_UDID"
           echo 'suite_load_timeout: 12m' > dart_test.yaml
           signature='Error waiting for a debug connection: The log reader failed unexpectedly'
-          for attempt in 1 2; do
+          for attempt in 1 2 3; do
             log="$RUNNER_TEMP/decode-$attempt.log"
             if flutter test integration_test -d "$SIMULATOR_UDID" 2>&1 | tee "$log"; then
               exit 0
             fi
-            if [ "$attempt" = 2 ] || ! grep -qF "$signature" "$log" ||
+            if [ "$attempt" = 3 ] || ! grep -qF "$signature" "$log" ||
               ! grep -qF '0 tests passed, 1 failed.' "$log"; then
               exit 1
             fi
-            echo "::warning::The app never reported its VM service URL. Retrying once."
+            echo "::warning::The app never reported its VM service URL. Retrying."
           done
