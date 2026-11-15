@@ -31,3 +31,17 @@ jobs:
       - run: dart run example/simdjson_dart_example.dart
       - run: dart run example/ndjson_log_scan.dart
       - run: dart run example/ndjson_stream.dart
+
+  # Resolves the lowest versions pubspec.yaml allows on the lowest SDK it
+  # allows. A lower bound that is too low fails here. Keep sdk equal to
+  # environment.sdk in pubspec.yaml.
+  downgrade:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dart-lang/setup-dart@v1
+        with:
+          sdk: 3.10.0
+      - run: dart pub downgrade
+      - run: dart analyze --fatal-infos
+      - run: dart test

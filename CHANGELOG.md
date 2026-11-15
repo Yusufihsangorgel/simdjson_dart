@@ -24,6 +24,9 @@
   on an iOS simulator.
 - The pubspec now declares Android and iOS besides Linux, macOS and Windows.
   Web is not listed.
+- Dev dependency bounds raised to `test` `^1.27.0` and `frontend_server_client`
+  `^4.0.0`. With the old bounds `dart pub downgrade` resolved packages that do
+  not compile. CI now tests the lowest versions.
 
 ## 1.6.1
 
