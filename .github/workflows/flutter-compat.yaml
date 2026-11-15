@@ -1,0 +1,146 @@
+name: flutter-compat
+
+# Generates a Flutter app that depends on this checkout, once per supported
+# Flutter release line, and proves the native build works there. Pub has to
+# pick the expected hooks, code_assets and native_toolchain_c. The Linux build
+# has to compile and decode JSON on the device. The release APK has to carry
+# a 16 KB aligned library for every ABI, with the C++ standard library linked
+# in statically. Nothing runs on Android or iOS.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  # Weekly, after ci.yaml. New releases of the build packages or a new runner
+  # image show up here without a push.
+  schedule:
+    - cron: '43 7 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  compat:
+    name: >-
+      Flutter ${{ matrix.flutter.version }}${{ matrix.flutter.upgrade && ' upgraded' || '' }}
+      ${{ matrix.target }}
+    # Pinned. A newer image may lack libstdc++-12-dev.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        # Newest stable patch of each line in
+        # https://storage.googleapis.com/flutter_infra_release/releases/releases_linux.json
+        #
+        # The `expect` value is what pub has to resolve. The `flutter create`
+        # command seeds the lock file with the meta version the SDK itself
+        # locks. That is 1.17.0 on 3.38 and 3.41, 1.18.0 on 3.44, 1.18.3 on
+        # 3.47 and 1.19.0 on 3.50.
+        # native_toolchain_c 0.19.6 needs meta ^1.19.0. A new app therefore
+        # gets the older releases up to 3.47. On 3.47 the SDK allows meta
+        # ^1.18.3, and `flutter pub upgrade` moves an app to the newer
+        # releases. The `upgrade` row covers that path.
+        #
+        # A `name=version` entry is an exact match and `name>=version` accepts
+        # that release or a newer one. The seeded rows are exact because they
+        # prove what an older SDK resolves. The upgraded row and the 3.50 row
+        # take the newest releases and only set a floor, which keeps them
+        # green after the next upstream release.
+        flutter:
+          - version: 3.38.10
+            expect: code_assets=1.2.1 hooks=2.0.2 native_toolchain_c=0.19.2
+          - version: 3.41.9
+            expect: code_assets=1.2.1 hooks=2.0.2 native_toolchain_c=0.19.2
+          - version: 3.44.9
+            expect: code_assets=1.2.1 hooks=2.0.2 native_toolchain_c=0.19.2
+          - version: 3.47.9
+            expect: code_assets=1.2.1 hooks=2.0.2 native_toolchain_c=0.19.2
+          - version: 3.47.9
+            upgrade: true
+            expect: code_assets>=2.2.0 hooks>=2.2.0 native_toolchain_c>=0.19.6
+          - version: 3.50.0
+            expect: code_assets>=2.2.0 hooks>=2.2.0 native_toolchain_c>=0.19.6
+        target: [linux, android]
+    steps:
+      - uses: actions/checkout@v4
+
+      - if: matrix.target == 'android'
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: ${{ matrix.flutter.version }}
+          channel: stable
+          cache: true
+
+      - name: Install the Linux desktop toolchain
+        if: matrix.target == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang cmake ninja-build pkg-config \
+            libgtk-3-dev liblzma-dev libstdc++-12-dev xvfb
+
+      - name: Create the consumer app
+        working-directory: ${{ runner.temp }}
+        run: flutter create --platforms=linux,android --project-name compat_app compat_app
+
+      # Copies the decode test in, then depends on this checkout by path.
+      - name: Add simdjson_dart
+        run: |
+          dart tool/ci/prepare_app.dart "$RUNNER_TEMP/compat_app"
+          cd "$RUNNER_TEMP/compat_app"
+          flutter pub add "simdjson_dart:{\"path\":\"$GITHUB_WORKSPACE\"}" \
+            'dev:integration_test:{"sdk":"flutter"}'
+          flutter pub get
+
+      - name: Upgrade within the SDK constraints
+        if: matrix.flutter.upgrade
+        working-directory: ${{ runner.temp }}/compat_app
+        run: flutter pub upgrade
+
+      - name: Check resolved versions
+        working-directory: ${{ runner.temp }}/compat_app
+        env:
+          EXPECT: ${{ matrix.flutter.expect }}
+        run: |
+          flutter pub deps --json > deps.json
+          # EXPECT is a space separated list of name=version and
+          # name>=version arguments.
+          # shellcheck disable=SC2086
+          dart "$GITHUB_WORKSPACE/tool/ci/check_resolution.dart" deps.json $EXPECT
+
+      - name: Build for Linux
+        if: matrix.target == 'linux'
+        working-directory: ${{ runner.temp }}/compat_app
+        run: flutter build linux --debug
+
+      - name: Decode on Linux
+        if: matrix.target == 'linux'
+        working-directory: ${{ runner.temp }}/compat_app
+        run: xvfb-run -a flutter test integration_test -d linux
+
+      # Gradle and its dependencies only. An NDK the runner lacks is still
+      # downloaded on each run.
+      - if: matrix.target == 'android'
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-flutter-${{ matrix.flutter.version }}
+
+      # The template signs release builds with the debug key.
+      - name: Build the release APK
+        if: matrix.target == 'android'
+        working-directory: ${{ runner.temp }}/compat_app
+        run: flutter build apk --release
+
+      - name: Check the packed native libraries
+        if: matrix.target == 'android'
+        working-directory: ${{ runner.temp }}/compat_app
+        run: dart "$GITHUB_WORKSPACE/tool/ci/check_apk.dart" build/app/outputs/flutter-apk/app-release.apk

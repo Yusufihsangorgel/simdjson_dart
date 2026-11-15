@@ -21,7 +21,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dart-lang/setup-dart@v1
       - run: dart pub get
-      - run: dart format --output=none --set-exit-if-changed lib test bench example hook
+      - run: dart format --output=none --set-exit-if-changed lib test bench example hook tool
       - run: dart analyze --fatal-infos
       - run: dart test
 

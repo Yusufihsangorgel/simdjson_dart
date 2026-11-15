@@ -19,9 +19,11 @@ include: package:lints/recommended.yaml
 #   rules:
 #     - camel_case_types
 
-# analyzer:
-#   exclude:
-#     - path/to/excluded/files/**
+analyzer:
+  exclude:
+    # Copied into the app that .github/workflows/flutter-compat.yaml
+    # generates. Its Flutter imports resolve there and not in this package.
+    - tool/ci/integration_test/**
 
 # For more information about the core and recommended set of lints, see
 # https://dart.dev/go/core-lints

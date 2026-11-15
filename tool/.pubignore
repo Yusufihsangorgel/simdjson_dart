@@ -1,0 +1,3 @@
+# The on-device test imports flutter_test and integration_test, which the
+# package does not depend on. The other CI helpers belong with it.
+/ci/

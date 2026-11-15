@@ -416,11 +416,18 @@ a 213 MB high-water mark for the simdjson run and 202 MB for
 
 ## Platform support
 
-Dart 3.10+ with build hooks: `dart run`, `dart test`, and `dart build`
-compile the C++ automatically (a C++17 toolchain must be present:
-Xcode CLT, gcc/clang, or MSVC). Developed and verified on macOS arm64;
-CI covers Linux, macOS, and Windows. Flutter support arrives when
-build hooks land in stable Flutter.
+Dart 3.10+ with build hooks. `dart run`, `dart test`, and `dart build`
+compile the C++ automatically and need a C++17 toolchain (Xcode CLT, gcc or
+clang, or MSVC). Developed and verified on macOS arm64. CI covers Linux,
+macOS, and Windows.
+
+Build hooks are stable in Flutter since 3.38. The workflow in
+`.github/workflows/flutter-compat.yaml` generates a Flutter app that depends
+on this package, once for each of Flutter 3.38, 3.41, 3.44, 3.47 and 3.50. It
+builds the app for Linux and runs a decode test there. It also builds a
+release APK and checks the native library in it for 16 KB alignment and for
+the libraries it links. Nothing runs on Android or iOS yet, and the package
+declares only Linux, macOS, and Windows.
 
 ## Credits and licenses
 
