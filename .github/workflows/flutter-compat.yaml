@@ -221,6 +221,24 @@ jobs:
       - name: Show the Flutter version
         run: flutter --version
 
+      # Same key as the compat job, restore only. That job saves the entries
+      # for these two release lines from main. This job adds no entry to the
+      # repository cache.
+      - name: Key the Gradle cache
+        id: gradle-key
+        working-directory: ${{ runner.temp }}/compat_app/android
+        run: |
+          hash=$(cat gradle/wrapper/gradle-wrapper.properties settings.gradle.kts | sha256sum | cut -c1-16)
+          echo "key=gradle-$RUNNER_OS-$hash" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the Gradle cache
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: ${{ steps.gradle-key.outputs.key }}
+
       # Gradle, the NDK and the build hook run here and not while the emulator
       # waits. A build failure then shows up as its own step.
       - name: Build the x86_64 debug APK
