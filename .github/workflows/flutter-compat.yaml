@@ -191,7 +191,9 @@ jobs:
   android-emulator:
     name: Flutter ${{ matrix.flutter.version }} Android API ${{ matrix.api-level }} emulator
     runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    # Room for the build, the emulator boot and three test attempts of about
+    # 12 minutes each.
+    timeout-minutes: 50
     env:
       APP_PLATFORMS: android
     strategy:
@@ -234,9 +236,8 @@ jobs:
 
       # The action runs each script line in a separate shell. It sets
       # EMULATOR_PORT, and the emulator's adb serial is emulator-<port>.
-      # Flutter 3.50.0 has no suite load timeout of its own (see the
-      # simulator job). The dart_test.yaml line sets 12 minutes. A launch
-      # that never connects then fails there and not at the job limit.
+      # Flutter can stall here before the first test too, in adb install or
+      # after it. The script handles that as on the simulator.
       - name: Decode on the emulator
         uses: reactivecircus/android-emulator-runner@v2
         with:
@@ -245,10 +246,9 @@ jobs:
           arch: x86_64
           working-directory: ${{ runner.temp }}/compat_app
           script: |
-            echo 'suite_load_timeout: 12m' > dart_test.yaml
             adb devices -l
             echo "device emulator-$EMULATOR_PORT, API $(adb -s emulator-$EMULATOR_PORT shell getprop ro.build.version.sdk), ABI $(adb -s emulator-$EMULATOR_PORT shell getprop ro.product.cpu.abi)"
-            flutter test integration_test -d emulator-$EMULATOR_PORT
+            sh "$GITHUB_WORKSPACE/tool/ci/run_device_test.sh" "emulator-$EMULATOR_PORT"
 
   ios-simulator:
     name: Flutter ${{ matrix.flutter.version }} iOS simulator
@@ -295,27 +295,11 @@ jobs:
       # Flutter 3.38.10 and 3.50.0 can launch the app before their simulator
       # `log stream` is ready and then miss the VM service URL
       # (flutter/flutter#181771, fixed on master by flutter/flutter#193142).
-      # The test then times out after 12 minutes without running and Flutter
-      # prints the debug connection error below. Only that case is retried,
-      # up to twice. A failing test is never retried. Flutter 3.50.0 ships
-      # test_core 0.6.20, which has no suite load timeout by default
-      # (dart-lang/test#2505). Without one the test waits until the job is
-      # cancelled. The dart_test.yaml line below sets 12 minutes again.
+      # Flutter 3.50.0 ships test_core 0.6.20, which has no suite load
+      # timeout by default (dart-lang/test#2505). The script sets 12 minutes
+      # and runs the test up to three times. Only a run that started no test
+      # is retried.
       - name: Decode on the simulator
         working-directory: ${{ runner.temp }}/compat_app
         shell: bash
-        run: |
-          echo "device $SIMULATOR_UDID"
-          echo 'suite_load_timeout: 12m' > dart_test.yaml
-          signature='Error waiting for a debug connection: The log reader failed unexpectedly'
-          for attempt in 1 2 3; do
-            log="$RUNNER_TEMP/decode-$attempt.log"
-            if flutter test integration_test -d "$SIMULATOR_UDID" 2>&1 | tee "$log"; then
-              exit 0
-            fi
-            if [ "$attempt" = 3 ] || ! grep -qF "$signature" "$log" ||
-              ! grep -qF '0 tests passed, 1 failed.' "$log"; then
-              exit 1
-            fi
-            echo "::warning::The app never reported its VM service URL. Retrying."
-          done
+        run: sh "$GITHUB_WORKSPACE/tool/ci/run_device_test.sh" "$SIMULATOR_UDID"
