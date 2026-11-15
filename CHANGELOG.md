@@ -8,6 +8,13 @@
 - README: the benchmark baseline no longer says `jsonDecode` maps materialize
   lazily, which contradicted the rest of the page.
 - README: point the `at` source link at the current line.
+- Link the C++ standard library statically on Android. The native library no
+  longer depends on `libc++_shared.so` being present in the app.
+- Return early from the build hook when a build does not request code assets,
+  since the hook now reads the target OS and that setting exists only in
+  code-asset builds.
+- Depend on `code_assets` directly with `>=1.2.1 <3.0.0`, which keeps the
+  package resolvable on Flutter 3.38 to 3.44.
 
 ## 1.6.1
 
