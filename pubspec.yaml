@@ -45,9 +45,10 @@ dependencies:
 dev_dependencies:
   lints: ^6.0.0
   # Lower bounds that `dart pub downgrade` can build and run. test 1.25 and
-  # 1.26 resolve analyzer 6.1 or older, which needs watcher 1.0.0, and that does
-  # not compile on current SDKs.
+  # 1.26 allow analyzer versions before 6.4, which allow watcher 1.0.0. That
+  # watcher implements FileSystemEvent, which is sealed since Dart 3.1.
   test: ^1.27.0
-  # package:test allows frontend_server_client 3.x, which starts a frontend
-  # server snapshot that 64-bit SDKs do not ship.
+  # The test_core version that package:test pins allows frontend_server_client
+  # 3.2, which starts frontend_server.dart.snapshot. 64-bit SDKs ship only the
+  # AOT snapshot.
   frontend_server_client: ^4.0.0

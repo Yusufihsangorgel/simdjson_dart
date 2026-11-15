@@ -129,9 +129,9 @@ void main() {
     // while the whole-buffer path holds the payload. Same child-process
     // reason as the probes above, and started without `run` for the reason
     // given on _liveBlocksLeft. This is sequential with them so two probe
-    // processes do not compete for RAM. The probe reports the
-    // most input-copy and tape bytes held at once in each phase. What that
-    // number leaves out is listed above the leak probes.
+    // processes do not compete for RAM. The probe reports the most input-copy
+    // and tape bytes held at once in each phase. What that number leaves out
+    // is listed above the leak probes.
     test(
       'ndjson stream holds chunk-sized native memory, whole-buffer the payload',
       () {
