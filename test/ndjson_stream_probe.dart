@@ -1,26 +1,25 @@
 // Streams two generated NDJSON payloads and fully-decodes the larger one,
-// printing the RSS sampled during each phase. Lives in a child process
-// because `dart test` runs suites concurrently in one process, so RSS
-// measured inside a test is contaminated by whatever else is allocating.
+// printing the most native memory each phase held at once. Lives in a child
+// process because that high-water mark covers the whole process, and
+// `dart test` runs suites concurrently in one process.
 //
-// Usage: dart run test/ndjson_stream_probe.dart
-// Prints COUNT / PEAK_RSS / FILE_BYTES for STREAM_SMALL, STREAM_LARGE,
-// WHOLE_LARGE. `dart run` writes build-hook progress to stdout too, so
+// Run it as `dart run test/ndjson_stream_probe.dart`. It prints CHUNK_BYTES,
+// then COUNT / PEAK_NATIVE_BYTES / FILE_BYTES for STREAM_SMALL, STREAM_LARGE,
+// WHOLE_LARGE. The run command writes build-hook progress to stdout too, and
 // the markers are what make the numbers findable.
 //
-// Lines are fat and few so the input can grow without the Dart object
-// graph dominating: the thing under test is whether the *bytes* stay
-// bounded. PEAK_RSS is ProcessInfo.currentRss sampled after warmup and
-// then every 256 records of that phase. It is not a heap accounting of
-// the decoder: it includes the VM, the JIT, and the thread-local
-// parser's retained capacity. It is a proxy for "did resident size
-// track the file?"
+// PEAK_NATIVE_BYTES counts the input copies and result tapes the shim
+// holds, which is where a decode that tracked the file would show it. The
+// shim counts only after sj_count_allocations turns counting on, and this
+// probe does that first. This used to sample process RSS instead. That number
+// also follows the Dart heap and the collector, and under Dart 3.14 the small
+// stream could peak tens of megabytes above the large one.
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:simdjson_dart/simdjson_dart.dart';
+import 'package:simdjson_dart/src/bindings.dart';
 
 const _smallRows = 4000;
 const _largeRows = 20000;
@@ -36,6 +35,7 @@ const _blob =
 const _chunkSize = 64 * 1024;
 
 void main() async {
+  sjCountAllocations(true);
   final warmup = Uint8List.fromList(
     utf8.encode('{"n":0,"p":"x"}\n{"n":1,"p":"x"}\n'),
   );
@@ -44,6 +44,7 @@ void main() async {
   }
   await simdJsonDecodeNdjsonStream(Stream.fromIterable([warmup])).drain();
 
+  stdout.writeln('\nCHUNK_BYTES=$_chunkSize');
   final small = await _stream(_smallRows);
   _print('STREAM_SMALL', small);
 
@@ -71,7 +72,7 @@ Stream<Uint8List> _chunks(int rows) async* {
 }
 
 Future<({int peak, int count, int bytes})> _stream(int rows) async {
-  var peak = ProcessInfo.currentRss;
+  sjResetPeakBytes();
   var count = 0;
   var bytes = 0;
   await for (final _ in simdJsonDecodeNdjsonStream(
@@ -81,11 +82,8 @@ Future<({int peak, int count, int bytes})> _stream(int rows) async {
     }),
   )) {
     count++;
-    if (count & 0xff == 0) {
-      peak = max(peak, ProcessInfo.currentRss);
-    }
   }
-  return (peak: max(peak, ProcessInfo.currentRss), count: count, bytes: bytes);
+  return (peak: sjPeakBytes(), count: count, bytes: bytes);
 }
 
 ({int peak, int count, int bytes}) _whole(int rows) {
@@ -94,23 +92,13 @@ Future<({int peak, int count, int bytes})> _stream(int rows) async {
     builder.add(_line(i));
   }
   final payload = builder.takeBytes();
-  var peak = ProcessInfo.currentRss;
-  var count = 0;
-  for (final _ in simdJsonDecodeNdjsonBytes(payload)) {
-    count++;
-    if (count & 0xff == 0) {
-      peak = max(peak, ProcessInfo.currentRss);
-    }
-  }
-  return (
-    peak: max(peak, ProcessInfo.currentRss),
-    count: count,
-    bytes: payload.length,
-  );
+  sjResetPeakBytes();
+  final count = simdJsonDecodeNdjsonBytes(payload).length;
+  return (peak: sjPeakBytes(), count: count, bytes: payload.length);
 }
 
 void _print(String label, ({int peak, int count, int bytes}) result) {
   stdout.writeln('${label}_FILE_BYTES=${result.bytes}');
   stdout.writeln('${label}_COUNT=${result.count}');
-  stdout.writeln('${label}_PEAK_RSS=${result.peak}');
+  stdout.writeln('${label}_PEAK_NATIVE_BYTES=${result.peak}');
 }

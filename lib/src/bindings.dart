@@ -36,8 +36,33 @@ external void sjParseNdjson(
   Pointer<SjResult> result,
 );
 
+/// Allocates [size] bytes of native memory, or returns null on failure.
+@Native<Pointer<Uint8> Function(Uint64)>(symbol: 'sj_alloc')
+external Pointer<Uint8> sjAlloc(int size);
+
+/// Releases a block from [sjAlloc] or a result tape.
 @Native<Void Function(Pointer<Uint8>)>(symbol: 'sj_free')
-external void sjFree(Pointer<Uint8> tape);
+external void sjFree(Pointer<Uint8> block);
+
+/// Turns the counts behind [sjLiveAllocations] and [sjPeakBytes] on or off
+/// for the whole process. They are off by default, and only tests turn them
+/// on.
+@Native<Void Function(Bool)>(symbol: 'sj_count_allocations')
+external void sjCountAllocations(bool on);
+
+/// Blocks from [sjAlloc], result tapes, and open documents taken while
+/// counting was on and not yet released, across the whole process.
+@Native<Int64 Function()>(symbol: 'sj_live_allocations')
+external int sjLiveAllocations();
+
+/// The most bytes of counted [sjAlloc] blocks and result tapes held at once
+/// since the last [sjResetPeakBytes].
+@Native<Uint64 Function()>(symbol: 'sj_peak_bytes')
+external int sjPeakBytes();
+
+/// Starts a new [sjPeakBytes] measurement from the bytes held now.
+@Native<Void Function()>(symbol: 'sj_reset_peak_bytes')
+external void sjResetPeakBytes();
 
 @Native<Pointer<Void> Function(Pointer<Uint8>, Uint64, Pointer<SjResult>)>(
   symbol: 'sj_open',

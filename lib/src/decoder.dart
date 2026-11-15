@@ -143,30 +143,27 @@ String errorMessageOf(SjResult r) {
 
 /// Allocates [bytes] of native memory. Throws [StateError] when the
 /// allocation fails.
+///
+/// The block comes from the shim, which can count what it hands out and gets
+/// back. While [sjCountAllocations] has counting on, a lost free shows up in
+/// [sjLiveAllocations].
 Pointer<Uint8> allocateBytes(int bytes) {
-  // malloc(0) may legally return null; always request at least a byte.
-  final pointer = _mallocNative(bytes < 1 ? 1 : bytes);
+  final pointer = sjAlloc(bytes);
   if (pointer == nullptr) {
     throw StateError('native allocation of $bytes bytes failed');
   }
-  return pointer.cast<Uint8>();
+  return pointer;
 }
 
 /// Frees memory from [allocateBytes].
-void freeBytes(Pointer<Uint8> pointer) => _freeNative(pointer.cast());
+void freeBytes(Pointer<Uint8> pointer) => sjFree(pointer);
 
 /// Allocates an [SjResult]; the C side writes every field.
 Pointer<SjResult> allocateResult() =>
     allocateBytes(sizeOf<SjResult>()).cast<SjResult>();
 
 /// Frees a result from [allocateResult].
-void freeResult(Pointer<SjResult> pointer) => _freeNative(pointer.cast());
-
-@Native<Pointer<Void> Function(IntPtr)>(symbol: 'malloc')
-external Pointer<Void> _mallocNative(int size);
-
-@Native<Void Function(Pointer<Void>)>(symbol: 'free')
-external void _freeNative(Pointer<Void> pointer);
+void freeResult(Pointer<SjResult> pointer) => sjFree(pointer.cast());
 
 /// Sequential reader for the tape format produced by the shim; see
 /// src/simdjson_shim.cpp for the layout.

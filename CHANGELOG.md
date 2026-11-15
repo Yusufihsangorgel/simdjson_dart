@@ -1,5 +1,9 @@
 ## 1.6.2
 
+- The leak tests count native allocations instead of reading process RSS.
+  Counting is off unless a test turns it on. Buffers the Dart side passes to
+  native code are now allocated by the native library, which does the
+  counting.
 - README: state that a C++17 toolchain is needed to build the native code,
   instead of saying there is nothing to install.
 - README: replace the unchecked comparison with `crimson` by a checked one:

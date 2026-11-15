@@ -1,21 +1,26 @@
-// Runs one allocation loop and prints the resident-set growth it caused.
+// Runs one allocation loop and prints how many native blocks it left alive.
 //
-// This lives in a separate process on purpose. `dart test` runs suites
-// concurrently in one process, so resident set size measured inside a test is
-// contaminated by whatever the other suites are allocating at the time -
-// measured at over 500MB of unrelated growth, which is far more than the leaks
-// these loops exist to detect. A child process sees only its own work.
+// With counting on, the shim counts every block it hands out (input and
+// result buffers, result tapes, open documents) and every block it gets back.
+// Counting is off by default, and this probe turns it on before anything
+// else. The difference across the loop is 0, or one block per iteration for
+// each lost free.
 //
-// Usage: dart run test/leak_probe.dart <mode> <iterations>
-// Prints: a line of the form `RSS_DELTA_MB=<megabytes>`. `dart run` writes
-// build-hook progress to stdout too, so the marker is what makes the number
-// findable.
+// This lives in a separate process on purpose. The count covers the whole
+// process, and `dart test` runs suites concurrently in one process. A child
+// process sees only its own work.
+//
+// Run it as `dart run test/leak_probe.dart <mode> <iterations>`. It prints a
+// line of the form `LIVE_DELTA=<blocks>`. The run command writes build-hook
+// progress to stdout too, and the marker is what makes the number findable.
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:simdjson_dart/simdjson_dart.dart';
+import 'package:simdjson_dart/src/bindings.dart';
+import 'package:simdjson_dart/src/decoder.dart';
 
 Uint8List _bytes(String value) => Uint8List.fromList(utf8.encode(value));
 
@@ -62,8 +67,9 @@ Future<void> main(List<String> args) async {
   final mode = args[0];
   final iterations = int.parse(args[1]);
 
+  _startCounting();
+
   late FutureOr<void> Function() cycle;
-  var warmup = 200;
 
   switch (mode) {
     case 'parseBytes':
@@ -84,37 +90,33 @@ Future<void> main(List<String> args) async {
       final line =
           '{"items":[${List.generate(200, (i) => '{"id":$i}').join(',')}]}';
       final payload = _bytes(List.filled(20, line).join('\n'));
-      warmup = 100;
       cycle = () => simdJsonDecodeNdjsonBytes(payload);
     case 'ndjsonFailure':
       final payload = _malformedNdjsonPayload();
-      warmup = 100;
       cycle = () => _expectFormat(() => simdJsonDecodeNdjsonBytes(payload));
     case 'pointer':
       final key = 'k' * 32768;
       final document = SimdJsonDocument.parse('{"$key":1}');
       final pointer = '/$key';
-      warmup = 100;
       cycle = () => document.at(pointer);
+      // Closing it afterwards keeps the document reachable until the last
+      // count is read. A finalizer could otherwise free it first.
+      try {
+        _report(await _liveDelta(iterations, cycle));
+      } finally {
+        document.close();
+      }
+      return;
     case 'pointerFailure':
       final document = SimdJsonDocument.parse('{"a":1}');
       final pointer = 'k' * 32768;
-      warmup = 100;
       cycle = () {
         _expectFormat(() => document.at(pointer));
         _expectFormat(() => document.exists(pointer));
         _expectFormat(() => document.atMany([pointer]));
       };
       try {
-        for (var i = 0; i < warmup; i++) {
-          await cycle();
-        }
-        final before = ProcessInfo.currentRss;
-        for (var i = 0; i < iterations; i++) {
-          await cycle();
-        }
-        final grownMb = (ProcessInfo.currentRss - before) / (1024 * 1024);
-        stdout.writeln('\nRSS_DELTA_MB=$grownMb');
+        _report(await _liveDelta(iterations, cycle));
       } finally {
         document.close();
       }
@@ -124,7 +126,6 @@ Future<void> main(List<String> args) async {
         '{"items":[${List.generate(2000, (i) => '{"id":$i,"n":"x$i"}').join(',')}]}\n',
       );
       final pointer = 'k' * 32768;
-      warmup = 100;
       cycle = () => _expectFormatAsync(() async {
         await simdJsonSelectNdjsonStream(Stream<List<int>>.value(line), [
           pointer,
@@ -134,13 +135,57 @@ Future<void> main(List<String> args) async {
       throw ArgumentError('unknown mode $mode');
   }
 
-  for (var i = 0; i < warmup; i++) {
-    await cycle();
-  }
-  final before = ProcessInfo.currentRss;
+  _report(await _liveDelta(iterations, cycle));
+}
+
+/// How many more native blocks are alive after [iterations] calls of [cycle]
+/// than before them.
+Future<int> _liveDelta(int iterations, FutureOr<void> Function() cycle) async {
+  final before = sjLiveAllocations();
   for (var i = 0; i < iterations; i++) {
     await cycle();
   }
-  final grownMb = (ProcessInfo.currentRss - before) / (1024 * 1024);
-  stdout.writeln('\nRSS_DELTA_MB=$grownMb');
+  return sjLiveAllocations() - before;
+}
+
+void _report(int liveDelta) => stdout.writeln('\nLIVE_DELTA=$liveDelta');
+
+/// Turns counting on, and throws unless the count follows blocks and
+/// documents across a switch of the setting. Without this, a count that never
+/// moves would pass every loop.
+void _startCounting() {
+  // Taken while counting is off and released while it is on. Neither may
+  // move the count.
+  sjCountAllocations(false);
+  final quietBlock = allocateBytes(1);
+  final quietDocument = SimdJsonDocument.parse('{}');
+  sjCountAllocations(true);
+  final start = sjLiveAllocations();
+  freeBytes(quietBlock);
+  quietDocument.close();
+  _expectLive(start, 'after releasing what was taken with counting off');
+
+  // Taken while counting is on and released while it is off. It adds one
+  // and takes it back.
+  final block = allocateBytes(1);
+  _expectLive(start + 1, 'with one block held');
+  sjCountAllocations(false);
+  freeBytes(block);
+  sjCountAllocations(true);
+  _expectLive(start, 'after releasing it with counting off');
+
+  // An open document adds one as well. Whether closing it takes that back is
+  // what the parseBytes loop measures.
+  final document = SimdJsonDocument.parse('{}');
+  _expectLive(start + 1, 'with one document open');
+  document.close();
+}
+
+void _expectLive(int expected, String when) {
+  final live = sjLiveAllocations();
+  if (live != expected) {
+    throw StateError(
+      'live allocation count was $live $when, expected $expected',
+    );
+  }
 }

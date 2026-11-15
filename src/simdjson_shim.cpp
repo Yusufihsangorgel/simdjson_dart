@@ -13,6 +13,8 @@
 //   0x07 object           (u32 pair count, then key string bytes + value)
 //   Object keys are written as u32 length + bytes, with no leading tag.
 
+#include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
@@ -31,6 +33,72 @@
 #include "third_party/simdjson/simdjson.h"
 
 namespace {
+
+// Counts the native memory this library hands across the C ABI (buffers the
+// Dart side asks for through sj_alloc, result tapes, and open documents).
+// The tests read sj_live_allocations to check that every entry point gives
+// back what it takes, and sj_peak_bytes to see how much a stream holds at
+// once. Process RSS cannot answer either question. It also follows the Dart
+// heap and the garbage collector.
+//
+// Counting is off until sj_count_allocations turns it on. Every thread
+// updates the same counters, and doing that on each allocation slows down
+// decoding on several isolates at once. With counting off, an allocation
+// reads the flag and touches no shared counter.
+std::atomic<bool> counting{false};
+std::atomic<int64_t> live_allocations{0};
+std::atomic<uint64_t> live_bytes{0};
+std::atomic<uint64_t> peak_bytes{0};
+
+// Each block starts with a 16-byte header that holds its size. The address
+// handed out is the one malloc returned plus 16. It is aligned to every power
+// of two up to 16 that malloc's address is aligned to. That covers
+// alignof(std::max_align_t) on every target (checked below), and it keeps the
+// 16-byte alignment malloc gives on 64-bit targets, where
+// alignof(std::max_align_t) can be 8.
+constexpr size_t kBlockHeader = 16;
+static_assert(kBlockHeader >= sizeof(uint64_t),
+              "the block header holds a 64-bit size");
+static_assert(kBlockHeader % alignof(std::max_align_t) == 0,
+              "the block header keeps max_align_t alignment");
+
+// The top bit of the stored size marks a block that was counted. Its free
+// then takes back exactly what its allocation added, even when counting was
+// switched on or off in between. A request large enough to reach that bit is
+// refused.
+constexpr uint64_t kCountedBit = uint64_t{1} << 63;
+
+uint8_t* counted_malloc(uint64_t size) {
+  if (size >= kCountedBit || size > SIZE_MAX - kBlockHeader) return nullptr;
+  auto* block = static_cast<uint8_t*>(
+      std::malloc(static_cast<size_t>(size) + kBlockHeader));
+  if (block == nullptr) return nullptr;
+  const bool counted = counting.load(std::memory_order_relaxed);
+  const uint64_t header = counted ? (size | kCountedBit) : size;
+  std::memcpy(block, &header, sizeof(header));
+  if (counted) {
+    live_allocations.fetch_add(1, std::memory_order_relaxed);
+    const uint64_t held =
+        live_bytes.fetch_add(size, std::memory_order_relaxed) + size;
+    uint64_t peak = peak_bytes.load(std::memory_order_relaxed);
+    while (held > peak && !peak_bytes.compare_exchange_weak(
+                              peak, held, std::memory_order_relaxed)) {
+    }
+  }
+  return block + kBlockHeader;
+}
+
+void counted_free(void* pointer) {
+  if (pointer == nullptr) return;
+  auto* block = static_cast<uint8_t*>(pointer) - kBlockHeader;
+  uint64_t header;
+  std::memcpy(&header, block, sizeof(header));
+  if ((header & kCountedBit) != 0) {
+    live_bytes.fetch_sub(header & ~kCountedBit, std::memory_order_relaxed);
+    live_allocations.fetch_sub(1, std::memory_order_relaxed);
+  }
+  std::free(block);
+}
 
 class TapeWriter {
  public:
@@ -60,10 +128,10 @@ class TapeWriter {
     std::memcpy(bytes_.data() + at, &v, 4);
   }
 
-  // Transfers ownership of the buffer to a malloc'd block.
+  // Copies the buffer into a block the caller releases with sj_free.
   uint8_t* release(size_t* out_length) {
     *out_length = bytes_.size();
-    auto* out = static_cast<uint8_t*>(std::malloc(bytes_.size()));
+    auto* out = counted_malloc(bytes_.size());
     if (out != nullptr) {
       std::memcpy(out, bytes_.data(), bytes_.size());
     }
@@ -227,7 +295,7 @@ static std::wstring utf8_to_wide(std::string_view utf8) {
 extern "C" {
 
 // Result of sj_parse. When error_code is 0, tape/tape_length hold a
-// malloc'd buffer the caller must release with sj_free. When non-zero,
+// buffer the caller must release with sj_free. When non-zero,
 // error_message points to a static string (do not free).
 struct SjResult {
   int32_t error_code;
@@ -240,7 +308,7 @@ struct SjResult {
 // everything (in practice only std::bad_alloc) and reports MEMALLOC.
 void fail_alloc(SjResult* result) {
   if (result->tape != nullptr) {
-    std::free(result->tape);
+    counted_free(result->tape);
     result->tape = nullptr;
     result->tape_length = 0;
   }
@@ -372,11 +440,54 @@ SJ_EXPORT void sj_parse_ndjson(const uint8_t* json, uint64_t length,
   }
 }
 
-SJ_EXPORT void sj_free(uint8_t* tape) { std::free(tape); }
+// Allocates native memory for the Dart side (input copies, pointer batches,
+// result structs). Returns null when the allocation fails. A request for zero
+// bytes still returns a distinct block.
+SJ_EXPORT uint8_t* sj_alloc(uint64_t size) { return counted_malloc(size); }
+
+// Releases a block from sj_alloc or a result tape. Null is ignored.
+SJ_EXPORT void sj_free(uint8_t* block) { counted_free(block); }
+
+// Turns allocation counting on or off for the whole process. It is off by
+// default, and only the tests turn it on. A block or document taken while
+// counting was on is subtracted when it is released, whatever the setting is
+// by then. One taken while counting was off never is.
+SJ_EXPORT void sj_count_allocations(bool on) {
+  counting.store(on, std::memory_order_relaxed);
+}
+
+// Blocks from sj_alloc, result tapes, and open documents taken while counting
+// was on and not yet released.
+SJ_EXPORT int64_t sj_live_allocations() {
+  return live_allocations.load(std::memory_order_relaxed);
+}
+
+// The most bytes of counted sj_alloc blocks and result tapes held at once
+// since the last sj_reset_peak_bytes. Document internals are not included.
+SJ_EXPORT uint64_t sj_peak_bytes() {
+  return peak_bytes.load(std::memory_order_relaxed);
+}
+
+SJ_EXPORT void sj_reset_peak_bytes() {
+  peak_bytes.store(live_bytes.load(std::memory_order_relaxed),
+                   std::memory_order_relaxed);
+}
 
 // A parsed document held open for lazy, repeated access. The parser owns
 // the underlying tape, so it lives alongside the root element.
 struct SjDocument {
+  SjDocument() : counted(counting.load(std::memory_order_relaxed)) {
+    if (counted) live_allocations.fetch_add(1, std::memory_order_relaxed);
+  }
+  ~SjDocument() {
+    if (counted) live_allocations.fetch_sub(1, std::memory_order_relaxed);
+  }
+  SjDocument(const SjDocument&) = delete;
+  SjDocument& operator=(const SjDocument&) = delete;
+
+  // Whether opening this document added to the count. Closing it subtracts
+  // only then, whatever the setting is by that time.
+  const bool counted;
   simdjson::dom::parser parser;
   simdjson::dom::element root;
 #if defined(_WIN32) && SIMDJSON_CPLUSPLUS17
