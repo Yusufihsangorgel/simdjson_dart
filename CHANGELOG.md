@@ -11,7 +11,9 @@
   code generation time, and each is the better pick in its own case.
 - README: the benchmark baseline no longer says `jsonDecode` maps materialize
   lazily, which contradicted the rest of the page.
-- README: point the `at` source link at the current line.
+- README: refer to `SimdJsonDocument.at` by name instead of a source line
+  number, which went stale.
+- README: warn that `dart build -o` deletes the output directory.
 - Link the C++ standard library statically on Android. The native library no
   longer depends on `libc++_shared.so` being present in the app.
 - Return early from the build hook when a build does not request code assets,

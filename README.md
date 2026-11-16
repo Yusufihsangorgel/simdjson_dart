@@ -18,7 +18,7 @@ can read a single field. If a 6 MB response carries three values you care
 about, you still pay to allocate every other string, list, and map in it.
 `SimdJsonDocument.parseBytes` parses once and materializes only what you ask
 for: `doc.at('/meta/total')` walks the parsed tape and hands back one Dart
-object (`lib/src/document.dart:148`).
+object (`SimdJsonDocument.at`).
 
 **Instead of `crimson`.** Both packages can read a nested field by an
 RFC 6901 pointer. In `crimson` the pointer is written in a `@JsonName`
@@ -354,6 +354,10 @@ loads its library from `../lib` next to it; shipping only the file out of
 `bin/` fails the same way as `dart compile exe`. Ship the whole folder.
 `dart run` and `dart test` are unaffected.
 
+Do not pass `-o` an existing directory you want to keep. `dart build` deletes
+the output directory before it builds, and the only guard is a `pubspec.yaml`
+check ([dart-lang/sdk#63135]).
+
 Treat this as the intended path, not a gap waiting on a fix. `dart build
 cli` is where the SDK points a package that carries build hooks, and the
 open discussion on the `dart compile exe` side is about narrowing its
@@ -362,6 +366,7 @@ not about teaching it to run them ([dart-lang/sdk#62593]), so the compile
 succeeding and the binary then failing at startup is not a reason to wait.
 
 [dart-lang/sdk#62593]: https://github.com/dart-lang/sdk/issues/62593
+[dart-lang/sdk#63135]: https://github.com/dart-lang/sdk/issues/63135
 
 ## A real file
 
