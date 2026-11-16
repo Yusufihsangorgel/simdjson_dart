@@ -355,8 +355,8 @@ loads its library from `../lib` next to it; shipping only the file out of
 `dart run` and `dart test` are unaffected.
 
 Do not pass `-o` an existing directory you want to keep. `dart build` deletes
-the output directory before it builds, and the only guard is a `pubspec.yaml`
-check ([dart-lang/sdk#63135]).
+the output directory before it builds, and the only check is that the
+directory does not hold a `pubspec.yaml` ([dart-lang/sdk#63135]).
 
 Treat this as the intended path, not a gap waiting on a fix. `dart build
 cli` is where the SDK points a package that carries build hooks, and the
